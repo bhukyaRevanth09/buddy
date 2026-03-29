@@ -20,7 +20,7 @@ export const userReg=  async (req,res,next)=>{
          const checkingData = await userModel?.findOne({email:email})
           
         if(checkingData){
-         return next({statusCode:409 , message:'user not data here !!'})
+         return next({statusCode:409 , message:' user already exist !!'})
         }
 
 
@@ -33,7 +33,7 @@ export const userReg=  async (req,res,next)=>{
           const hashed  = await passwordHashing(password)
   
          
-             const settingData = await   User.create({
+             const settingData = await   userModel.create({
             name,
             email,
             password:hashed,
@@ -45,8 +45,18 @@ export const userReg=  async (req,res,next)=>{
             geoLocation
 
            })
+
+           if(settingData){
+             const id = settingData._id
+               const role = settingData.role
+                const token =  TokenSetter({id,role})
+                  const RefreshTkn =  refreshToken({id,role})
+                    res.status(201).json({token,RefreshTkn})
+           }else{
+            return res.status(409).json('data not  saved in db !!')
+           }
           
-          return res.status(201).json('save in db')
+          
          }
 
         
@@ -62,10 +72,10 @@ export const userReg=  async (req,res,next)=>{
 
 export const userLog = async (req,res,next)=>{
    const {id,role} = req.data
-
-   if (id && role == "user"){
+   console.log(id,role)
+   if ( role == "user"){
       try {
-         const obtainedData = await userModel.findById({id:id})
+         const obtainedData = await userModel.findById(id)
 
          if(!obtainedData){
             return next({statusCode:404,message:"user not Founded!"})
@@ -83,7 +93,7 @@ export const userLog = async (req,res,next)=>{
       
 
       } catch (error) {
-         console.log("error at login user",error.name)
+         console.log("error at login user",error)
       }
    }
 }
@@ -95,6 +105,7 @@ export const buddyReg = async(req,res,next)=>{
         email,
         password,
         phone,
+        category,
         role,
         skills,
         experience,
@@ -120,10 +131,17 @@ try {
    else if (! /^\d{10}$/.test(phone)){
       return next({statuscode:400,message:'phone number not reached here !'})
    }else{
-      const checkingData = await buddy?.findOne({email:email})
+      
+      const checkingData = await buddyModel?.findOne({email:email})
+      const phonenumberChecking = await buddyModel?.findOne({phone:phone})
+
       if (checkingData){
          
          return next({statusCode:409,message:"email already exsits"})
+      }
+
+      if(phonenumberChecking){
+         return next({statusCode:409,message:"phonoe number is already used !!"})
       }
 
       const hashed = await passwordHashing(password)
@@ -135,6 +153,7 @@ try {
         password:hashed,
         phone,
         role,
+        category,
         skills,
         experience,
         pricePerHour,

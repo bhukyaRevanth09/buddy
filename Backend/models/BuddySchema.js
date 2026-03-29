@@ -31,6 +31,11 @@ const buddySchema = new mongoose.Schema({
     default: "buddy"
   },
 
+  category :{
+ type:String,
+ required:true
+  } ,
+  
   skills: [
     {
       type: String
@@ -38,7 +43,7 @@ const buddySchema = new mongoose.Schema({
   ],
 
   experience: {
-    type: Number, // in years
+    type: Number, 
     default: 0
   },
 
@@ -55,7 +60,7 @@ const buddySchema = new mongoose.Schema({
     pincode: String
   },
 
-  // ✅ GEOJSON (for nearby search)
+
   geoLocation: {
     type: {
       type: String,
@@ -63,15 +68,15 @@ const buddySchema = new mongoose.Schema({
       default: "Point"
     },
     coordinates: {
-      type: [Number], // [lng, lat]
+      type: [Number], 
       required: true
     }
   },
 
   availability: [
     {
-      day: String,          // e.g. "Monday"
-      slots: [String]       // e.g. ["10:00-12:00"]
+      day: String,          
+      slots: [String]       
     }
   ],
 
@@ -115,14 +120,14 @@ const buddySchema = new mongoose.Schema({
     default: 0
   },
 
-  // ✅ MAIN STATUS CONTROL
+
   availabilityStatus: {
     type: String,
     enum: ["available", "busy", "offline"],
     default: "available"
   },
 
-  // ✅ TRACK CURRENT WORK
+
   currentBooking: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "InstantBooking",
