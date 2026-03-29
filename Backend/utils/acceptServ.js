@@ -1,4 +1,4 @@
-import { subscriber } from "../services/redisPubSub.js";
+import { subscriber } from "../services/redis.js";
 import Redis from "ioredis";
 
 export const waitForAcceptance = (bookingId, timeout = 10000) => {

@@ -4,7 +4,7 @@ import  dotenv from 'dotenv'
 import errorHandler from '../middleware/errorHandling.js'
 
 import mainRouter from '../Routes/authroute.js'
-import instantRoute from '../Routes/BookingRoute.js'
+import instantRoute from '../Routes/instantRoute.js'
 
 const app = express();
 

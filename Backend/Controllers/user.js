@@ -19,7 +19,7 @@ export const getMyInstantBookings = async (req, res, next) => {
 // instant cancel booking
 export const cancelInstantBooking = async (req, res, next) => {
   try {
-    const booking = await InstantBooking.findById(req.params.id);
+    const booking = await instantBooking.findById(req.params.id);
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });

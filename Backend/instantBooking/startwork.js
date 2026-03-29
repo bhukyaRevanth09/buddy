@@ -1,4 +1,4 @@
-import instantBookingModel from "../models/instantBooking";
+import instantBookingModel from "../models/instantBooking.js";
 
 export const startWork = async (req, res, next) => {
   try {
