@@ -1,5 +1,5 @@
 import express from 'express'
-import { createInstantBooking } from '../Controllers/quickBooking.js'
+import { createInstantBooking } from '../instantBooking/quickBooking.js'
 import { tokenMiddleware,tokenRefreshWare } from '../middleware/tokenMiddleware.js'
 
 const instantRoute = express.Router()
