@@ -1,30 +1,26 @@
 import { Server } from "socket.io";
+import redis from "../Config/redis.js";
 
 let io;
 
 export const initSocket = (server) => {
   io = new Server(server, {
-    cors: {
-      origin: "*"
-    }
+    cors: { origin: "*" }
   });
 
   io.on("connection", (socket) => {
 
     console.log("User connected:", socket.id);
 
-    // ✅ Join personal room
-    socket.on("join", ({ userId, role }) => {
+    socket.on("join", async ({ userId, role }) => {
 
-      if (role === "user") {
-        socket.join(`user:${userId}`);
-      }
+      const room = `${role}:${userId}`;
+      socket.join(room);
 
-      if (role === "buddy") {
-        socket.join(`buddy:${userId}`);
-      }
+      //  mark online
+      await redis.set(`online:${room}`, "true");
 
-      console.log(`Joined room: ${role}:${userId}`);
+      console.log(`Joined room: ${room}`);
     });
 
     socket.on("disconnect", () => {
