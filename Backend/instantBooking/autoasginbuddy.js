@@ -3,6 +3,8 @@ import instantBookingModel from "../models/instantBooking.js";
 import { getIO } from "../services/chatSocket.js";
 import redis from "../Config/redis.js";
 import {bookingQueue } from "../utils/queue/bookingQueue.js";
+
+
 export const autoAssignBuddy = async (req, res, next) => {
   try {
     const io = getIO();
@@ -15,20 +17,8 @@ export const autoAssignBuddy = async (req, res, next) => {
         message: "Location required"
       });
     }
-    
-    await bookingQueue.add(
-  "retry-booking",
-  {
-    bookingId: booking._id,
-    buddies: buddies.map(b => b._id.toString()),
-    index: 0
-  },
-  {
-    delay: 10000 // ⏳ 10 sec wait for first buddy
-  }
-);
 
-    // 🔥 HYBRID MATCHING
+    // 🔍 FIND BEST BUDDIES
     const buddies = await buddyModel.aggregate([
       {
         $geoNear: {
@@ -45,12 +35,10 @@ export const autoAssignBuddy = async (req, res, next) => {
         $match: {
           availabilityStatus: "available",
           verificationStatus: "accepted",
-          skills: serviceType,                // ✅ skill match
-          pricePerHour: { $lte: price }       // ✅ budget match
+          skills: serviceType,
+          pricePerHour: { $lte: price }
         }
       },
-
-      // 🧠 scoring
       {
         $addFields: {
           score: {
@@ -63,7 +51,6 @@ export const autoAssignBuddy = async (req, res, next) => {
           }
         }
       },
-
       { $sort: { score: -1 } },
       { $limit: 5 }
     ]);
@@ -75,48 +62,62 @@ export const autoAssignBuddy = async (req, res, next) => {
       });
     }
 
-    // 📝 Create booking
+    // 📝 CREATE BOOKING FIRST
     const booking = await instantBookingModel.create({
       user,
       serviceType,
-      price,
-      location: {
-        type: "Point",
-        coordinates: [lng, lat]
+      pricing: {
+        totalAmount: price
       },
-      status: "pending",
-      buddy: buddies[0]._id // ✅ assign first buddy initially
+      location: {
+        address: "",
+        coordinates: {
+          type: "Point",
+          coordinates: [lng, lat]
+        }
+      },
+      status: "searching",
+      buddy: null // ❗ not assigned yet
     });
 
-    // 🧠 Redis state
+    // 🧠 REDIS STATE
     const redisData = {
       buddyIndex: 0,
       buddies: buddies.map(b => b._id.toString()),
-      status: "pending"
+      status: "searching"
     };
 
-    try {
-      await redis.set(
-        `booking:${booking._id}`,
-        JSON.stringify(redisData),
-        "EX",
-        60
-      );
-    } catch (err) {
-      console.log("⚠️ Redis failed:", err.message);
-    }
+    await redis.set(
+      `booking:${booking._id}`,
+      JSON.stringify(redisData),
+      "EX",
+      120 // ⏳ 2 min expiry
+    );
 
-    // 📡 send to first buddy
-    io.to(buddies[0]._id.toString()).emit("new-booking", {
+    // 📡 SEND TO FIRST BUDDY
+    const firstBuddy = buddies[0];
+
+    io.to(firstBuddy._id.toString()).emit("new-booking", {
       message: "New auto booking request",
       bookingId: booking._id
     });
 
-    console.log("🚀 Booking sent to:", buddies[0]._id);
+    console.log("🚀 Sent to first buddy:", firstBuddy._id);
+
+    // ⏳ QUEUE FOR RETRY SYSTEM
+    await bookingQueue.add(
+      "retry-booking",
+      {
+        bookingId: booking._id
+      },
+      {
+        delay: 10000 // 10 sec wait
+      }
+    );
 
     return res.status(200).json({
       success: true,
-      message: "Finding best buddy...",
+      message: "Searching for best buddy...",
       bookingId: booking._id
     });
 

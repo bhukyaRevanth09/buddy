@@ -1,41 +1,68 @@
+
 import instantBookingModel from "../models/instantBooking.js";
+import { getIO } from "../services/chatSocket.js";
 
 export const startWork = async (req, res, next) => {
   try {
-    const io = getIO();
-    const { bookingId } = req.body;
+    const { bookingId, otp } = req.body;
+    const buddyId = req.user.id;
 
-    const booking = await instantBookingModel.findById(bookingId);
+    const booking = await instantBookingModel
+      .findById(bookingId)
+      .select("+otp.start.code");
 
     if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found"
-      });
+      return res.status(404).json({ message: "Not found" });
     }
 
-    if (booking.status !== "accepted") {
-      return res.status(400).json({
-        success: false,
-        message: "Work cannot be started"
-      });
+    if (booking.buddy.toString() !== buddyId) {
+      return res.status(403).json({ message: "Not allowed" });
     }
 
-    booking.status = "ongoing";
+    if (booking.status !== "arrived") {
+      return res.status(400).json({ message: "Invalid state" });
+    }
+
+    const otpData = booking.otp.start;
+
+    // ❌ Check existence
+    if (!otpData || !otpData.code) {
+      return res.status(400).json({ message: "OTP not generated" });
+    }
+
+    // ❌ Expiry check
+    if (new Date() > otpData.expiresAt) {
+      return res.status(400).json({ message: "OTP expired" });
+    }
+
+    // ❌ Attempt limit
+    if (otpData.attempts >= 3) {
+      return res.status(400).json({ message: "Too many attempts" });
+    }
+
+    // ❌ Wrong OTP
+    if (otpData.code !== otp) {
+      booking.otp.start.attempts += 1;
+      await booking.save();
+
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    // ✅ SUCCESS
+    booking.status = "in-progress";
+    booking.startedAt = new Date();
+
+    // 🔥 clear OTP
+    booking.otp.start = null;
+
     await booking.save();
 
-    io.to(booking.user.toString()).emit("work-started", {
-      message: "Work started",
-      booking
-    });
-
-    res.status(200).json({
+    res.json({
       success: true,
-      message: "Work started successfully",
-      data: booking
+      message: "Work started"
     });
 
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    next(err);
   }
 };

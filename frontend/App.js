@@ -1,12 +1,8 @@
 import { View, Text } from 'react-native'
-import React from 'react'
+import AppNavigator from './src/navigation/appNavigator'
 
 const App = () => {
-  return (
-    <View>
-      <Text>Root app !!!</Text>
-    </View>
-  )
+  return   <AppNavigator />;
 }
 
 export default App

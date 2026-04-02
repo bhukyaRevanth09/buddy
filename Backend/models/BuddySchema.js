@@ -2,11 +2,9 @@ import mongoose from "mongoose";
 
 const buddySchema = new mongoose.Schema({
 
-  name: {
-    type: String,
-    required: true,
-    trim: true
-  },
+  name: { type: String,
+     required: true,
+      trim: true },
 
   email: {
     type: String,
@@ -23,7 +21,8 @@ const buddySchema = new mongoose.Schema({
 
   password: {
     type: String,
-    required: true
+    required: true,
+    select: false
   },
 
   role: {
@@ -31,26 +30,21 @@ const buddySchema = new mongoose.Schema({
     default: "buddy"
   },
 
-  category :{
- type:String,
- required:true
-  } ,
-  
-  skills: [
-    {
-      type: String
-    }
-  ],
+  category: {
+    type: String,
+    required: true
+  },
+
+  skills: [{ type: String, index: true }],
 
   experience: {
-    type: Number, 
+    type: Number,
     default: 0
   },
 
   pricePerHour: {
     type: Number,
-    required: true,
-    min: 0
+    required: true
   },
 
   address: {
@@ -60,7 +54,6 @@ const buddySchema = new mongoose.Schema({
     pincode: String
   },
 
-
   geoLocation: {
     type: {
       type: String,
@@ -68,24 +61,16 @@ const buddySchema = new mongoose.Schema({
       default: "Point"
     },
     coordinates: {
-      type: [Number], 
+      type: [Number],
       required: true
     }
   },
 
-  availability: [
-    {
-      day: String,          
-      slots: [String]       
-    }
-  ],
-
-  documents: [
-    {
-      name: String,
-      url: String
-    }
-  ],
+  liveLocation: {
+    lat: Number,
+    lng: Number,
+    updatedAt: Date
+  },
 
   verificationStatus: {
     type: String,
@@ -93,21 +78,17 @@ const buddySchema = new mongoose.Schema({
     default: "pending"
   },
 
-  rating: {
-    type: Number,
-    default: 0,
-    min: 0,
-    max: 5
+  accountStatus: {
+    type: String,
+    enum: ["active", "suspended", "blocked"],
+    default: "active"
   },
 
-  totalReview: {
-    type: Number,
-    default: 0
-  },
-
-  totalBooking: {
-    type: Number,
-    default: 0
+  availabilityStatus: {
+    type: String,
+    enum: ["available", "busy", "offline"],
+    default: "offline",
+    index: true
   },
 
   isOnline: {
@@ -115,33 +96,42 @@ const buddySchema = new mongoose.Schema({
     default: false
   },
 
-  earning: {
+  socketId: String,
+  fcmToken: String,
+
+  rating: {
+    average: { type: Number, default: 0 },
+    count: { type: Number, default: 0 }
+  },
+
+  totalBooking: {
     type: Number,
     default: 0
   },
 
-
-  availabilityStatus: {
-    type: String,
-    enum: ["available", "busy", "offline"],
-    default: "available"
+  earnings: {
+    total: { type: Number, default: 0 },
+    today: { type: Number, default: 0 },
+    thisMonth: { type: Number, default: 0 }
   },
-
 
   currentBooking: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "InstantBooking",
-    default: null
-  }
+    default: null,
+    index: true
+  },
+
+  documents: [
+    {
+      name: String,
+      url: String
+    }
+  ]
 
 }, { timestamps: true });
 
-
-// ✅ GEO INDEX (IMPORTANT)
 buddySchema.index({ geoLocation: "2dsphere" });
+buddySchema.index({ availabilityStatus: 1, verificationStatus: 1 });
 
-
-
-const buddyModel = mongoose.model("Buddy", buddySchema);
-
-export default buddyModel;
+export default mongoose.model("Buddy", buddySchema);

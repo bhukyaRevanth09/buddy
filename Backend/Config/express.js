@@ -1,10 +1,12 @@
-import express, { json } from 'express'
+import express from 'express'
 import cors from 'cors'
 import  dotenv from 'dotenv'
 import errorHandler from '../middleware/errorHandling.js'
+import authRouter from '../Routes/AuthRoute.js'
 
-import mainRouter from '../Routes/authroute.js'
-import instantRoute from '../Routes/instantRoute.js'
+
+
+
 
 const app = express();
 
@@ -13,9 +15,9 @@ dotenv.config({quiet:true})
 app.use(express.json());
 app.use(cors());
 
+app.use('/auth',authRouter)
 
-app.use(mainRouter);
-app.use(instantRoute);
+
 
 app.use(errorHandler)
 

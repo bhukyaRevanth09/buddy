@@ -2,9 +2,10 @@ import { passwordHashing } from "../services/passwordService.js"
 import userModel from "../models/UserSchema.js"
 import buddyModel from '../models/BuddySchema.js'
 import { TokenSetter ,refreshToken} from "../utils/tokenService.js"
+import OTP from "../models/OTP.js"
 
 
-export const userReg=  async (req,res,next)=>{
+export const userReg =  async (req,res,next)=>{
    const {name,
           email,
           password,
@@ -17,6 +18,19 @@ export const userReg=  async (req,res,next)=>{
 
 
      try {
+            const otpRecord = await OTP.findOne({
+      contact: phone,
+      verified: true
+              });
+
+    if (!otpRecord) {
+      return next({
+        statusCode: 400,
+        message: "Please verify OTP first"
+      });
+    }
+
+
          const checkingData = await userModel?.findOne({email:email})
           
         if(checkingData){
@@ -45,6 +59,7 @@ export const userReg=  async (req,res,next)=>{
             geoLocation
 
            })
+               await OTP.deleteOne({ _id: otpRecord._id });
 
            if(settingData){
              const id = settingData._id
@@ -70,33 +85,307 @@ export const userReg=  async (req,res,next)=>{
     
 }
 
-export const userLog = async (req,res,next)=>{
-   const {id,role} = req.data
-   console.log(id,role)
-   if ( role == "user"){
-      try {
-         const obtainedData = await userModel.findById(id)
 
-         if(!obtainedData){
-            return next({statusCode:404,message:"user not Founded!"})
-         }
+export const userLoginPassword = async (req, res, next) => {
+  try {
+    const { phone, password } = req.body;
 
-        if(req.method === "POST"){
-          const id = obtainedData?.id
-         const role = obtainedData?.role
-         const token = TokenSetter({id,role})
-         const RefreshTkn = refreshToken({id,role})
-         res.status(201).json({token,RefreshTkn})
-        }else{
-         res.status(201).json(obtainedData)
-        }
-      
+    // 🔹 1. Validate input
+    if (!phone || !password) {
+      return next({
+        statusCode: 400,
+        message: "Phone and password are required"
+      });
+    }
 
-      } catch (error) {
-         console.log("error at login user",error)
+    // 🔹 2. Find user
+    const user = await userModel.findOne({ phone });
+
+    if (!user) {
+      return next({
+        statusCode: 404,
+        message: "User not found"
+      });
+    }
+
+       if(record.otp != otp){
+    return next({
+        statusCode: 400,
+        message: "Invalid OTP"
+      });
+    }
+ 
+
+    // 🔹 4. Generate tokens
+    const token = TokenSetter({
+      id: user._id,
+      role: user.role
+    });
+
+    const RefreshTkn = refreshToken({
+      id: user._id,
+      role: user.role
+    });
+
+    // 🔹 5. Send response
+    res.status(200).json({
+      success: true,
+      message: "Login successful",
+      token,
+      RefreshTkn,
+      user: {
+        id: user._id,
+        name: user.name,
+        phone: user.phone,
+        role: user.role
       }
-   }
-}
+    });
+
+  } catch (error) {
+    console.error(error);
+    next({
+      statusCode: 500,
+      message: "Login error"
+    });
+  }
+};
+
+export const userLoginOtp = async (req, res, next) => {
+  try {
+    const { phone, otp } = req.body;
+
+    // 🔹 1. Validate input
+    if (!phone || !otp) {
+      return next({
+        statusCode: 400,
+        message: "Phone and OTP are required"
+      });
+    }
+
+    // 🔹 2. Get latest OTP
+    const record = await OTP.findOne({ contact: phone })
+      .sort({ createdAt: -1 });
+
+    if (!record) {
+      return next({
+        statusCode: 400,
+        message: "OTP not found, please request again"
+      });
+    }
+
+    // 🔹 3. Check expiry
+    if (record.expiresAt < new Date()) {
+      return next({
+        statusCode: 400,
+        message: "OTP expired"
+      });
+    }
+
+  
+
+     if(record.otp != otp){
+    return next({
+        statusCode: 400,
+        message: "Invalid OTP"
+      });
+    }
+
+
+    // 🔹 5. Find user
+    const user = await userModel.findOne({ phone });
+
+    if (!user) {
+      return next({
+        statusCode: 404,
+        message: "User not found, please register"
+      });
+    }
+
+    //  6. Generate tokens
+    const token = TokenSetter({
+      id: user._id,
+      role: user.role
+    });
+
+    const RefreshTkn = refreshToken({
+      id: user._id,
+      role: user.role
+    });
+
+    //  7. Delete OTP (prevent reuse)
+    await OTP.deleteOne({ _id: record._id });
+
+    //  8. Response
+    res.status(200).json({
+      success: true,
+      message: "User login successful",
+      token,
+      RefreshTkn,
+      user: {
+        id: user._id,
+        name: user.name,
+        phone: user.phone,
+        role: user.role
+      }
+    });
+
+  } catch (error) {
+    console.error(error);
+    next({
+      statusCode: 500,
+      message: "OTP login error"
+    });
+  }
+};
+
+export const userProfile = async (req, res, next) => {
+  const { id, role } = req.data;
+
+  // 🔒 Role check
+  if (role !== "user") {
+    return next({ statusCode: 403, message: "Access denied" });
+  }
+
+  try {
+    const user = await userModel.findById(id);
+
+    if (!user) {
+      return next({
+        statusCode: 404,
+        message: "User not found"
+      });
+    }
+
+    // ✅ Only return user data
+    res.status(200).json({
+      success: true,
+      user
+    });
+
+  } catch (error) {
+    console.error(error);
+    next({
+      statusCode: 500,
+      message: "Error fetching user profile"
+    });
+  }
+};
+
+
+
+
+
+
+
+export const changePassword = async (req, res, next) => {
+  try {
+    const { id, role } = req.data; // from auth middleware
+    const { oldPassword, newPassword } = req.body;
+
+    // 🔹 1. Validate input
+    if (!oldPassword || !newPassword) {
+      return next({
+        statusCode: 400,
+        message: "Old and new password are required"
+      });
+    }
+
+    // 🔹 2. Select model based on role
+    let Model;
+
+    if (role === "user") {
+      Model = userModel;
+    } else if (role === "buddy") {
+      Model = buddyModel;
+    } else {
+      return next({
+        statusCode: 403,
+        message: "Invalid role"
+      });
+    }
+
+    // 🔹 3. Find account
+    const account = await Model.findById(id);
+
+    if (!account) {
+      return next({
+        statusCode: 404,
+        message: "Account not found"
+      });
+    }
+
+    // 🔹 4. Verify old password
+    const isMatch = await bcrypt.compare(oldPassword, account.password);
+
+    if (!isMatch) {
+      return next({
+        statusCode: 400,
+        message: "Old password is incorrect"
+      });
+    }
+
+    // 🔹 5. Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // 🔹 6. Update password
+    account.password = hashedPassword;
+    await account.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Password changed successfully"
+    });
+
+  } catch (error) {
+    console.error(error);
+    next({
+      statusCode: 500,
+      message: "Change password error"
+    });
+  }
+};
+export const resetPasswordOtp = async (req, res, next) => {
+  try {
+    const { phone, otp, newPassword, role } = req.body;
+
+    let Model = role === "user" ? userModel : buddyModel;
+
+    const record = await OTP.findOne({ contact: phone });
+
+    if (!record || record.otp !== otp) {
+      return next({ statusCode: 400, message: "Invalid OTP" });
+    }
+
+    if (record.expiresAt < new Date()) {
+      return next({ statusCode: 400, message: "OTP expired" });
+    }
+
+    const account = await Model.findOne({ phone });
+
+    if (!account) {
+      return next({ statusCode: 404, message: "Account not found" });
+    }
+
+    account.password = await bcrypt.hash(newPassword, 10);
+    await account.save();
+
+    await OTP.deleteOne({ _id: record._id });
+
+    res.status(200).json({ message: "Password reset successful" });
+
+  } catch (error) {
+    next({ statusCode: 500, message: "Reset error" });
+  }
+};
+
+
+
+
+
+
+
+
+
 
 export const buddyReg = async(req,res,next)=>{
 
@@ -123,7 +412,17 @@ export const buddyReg = async(req,res,next)=>{
   
     console.log(phone)
 try {
-    
+    const otpRecord = await OTP.findOne({
+  contact: phone,
+  verified: true
+});
+
+if (!otpRecord) {
+  return next({
+    statusCode: 400,
+    message: "Please verify OTP first"
+  });
+}
     
    if (!name || !email || !skills || !phone ){
       return next({statusCode:400,message:'data not reached here !'})
@@ -169,6 +468,7 @@ try {
         earning
       })
 
+  await OTP.deleteOne({ _id: otpRecord._id });
 
      if(settingData){
        const id = settingData._id
@@ -184,31 +484,138 @@ try {
 }     
 }
 
+export const buddyLoginOtp = async (req, res, next) => {
+  try {
+    const { phone, otp } = req.body;
 
+    // 🔹 1. Validate input
+    if (!phone || !otp) {
+      return next({
+        statusCode: 400,
+        message: "Phone and OTP are required"
+      });
+    }
 
-export const buddyLog = async (req,res,next)=>{
-   const {id,role} = req.data
-  console.log('reached here !' ,req?.method)
-   if (id && role == "buddy"){
-      try {
-         const obtainedData = await buddyModel.findById(id)
-          
-           if(!obtainedData){
-            return next({statusCode:404,message:"user not Founded!"})
-         }
+    // 🔹 2. Get latest OTP
+    const record = await OTP.findOne({ contact: phone })
+      .sort({ createdAt: -1 });
 
-        if(req.method === "POST"){
-          const id = obtainedData?.id
-         const role = obtainedData?.role
-         const token = TokenSetter({id,role})
-         const RefreshTkn = refreshToken({id,role})
-         res.status(201).json({token,RefreshTkn})
-        }else{
-         res.status(201).json(obtainedData)
-        }
-      } catch (error) {
-         console.log("error at login user",error.name)
+    if (!record) {
+      return next({
+        statusCode: 400,
+        message: "OTP not found, please request again"
+      });
+    }
+
+    // 🔹 3. Check expiry
+    if (record.expiresAt < new Date()) {
+      return next({
+        statusCode: 400,
+        message: "OTP expired"
+      });
+    }
+
+   
+
+    if(record.otp != otp){
+    return next({
+        statusCode: 400,
+        message: "Invalid OTP"
+      });
+    }
+
+ 
+
+    // 🔹 5. Find buddy
+    const buddy = await buddyModel.findOne({ phone });
+
+    if (!buddy) {
+      return next({
+        statusCode: 404,
+        message: "Buddy not found, please register"
+      });
+    }
+
+    // 🔹 6. Generate tokens
+    const token = TokenSetter({
+      id: buddy._id,
+      role: buddy.role
+    });
+
+    const RefreshTkn = refreshToken({
+      id: buddy._id,
+      role: buddy.role
+    });
+
+    // 🔹 7. Delete OTP (prevent reuse)
+    await OTP.deleteOne({ _id: record._id });
+
+    // 🔹 8. Response
+    res.status(200).json({
+      success: true,
+      message: "Buddy login successful",
+      token,
+      RefreshTkn,
+      buddy: {
+        id: buddy._id,
+        name: buddy.name,
+        phone: buddy.phone,
+        role: buddy.role
       }
-   }
-}
+    });
 
+  } catch (error) {
+    console.error(error);
+    next({
+      statusCode: 500,
+      message: "OTP login error"
+    });
+  }
+};
+
+export const buddyLoginPassword= async (req, res, next) => {
+  try {
+    const { phone, password } = req.body;
+
+    const buddy = await buddyModel.findOne({ phone });
+
+    if (!buddy) {
+      return next({ statusCode: 404, message: "Buddy not found" });
+    }
+
+    const isMatch = await bcrypt.compare(password, buddy.password);
+
+    if (!isMatch) {
+      return next({ statusCode: 400, message: "Invalid password" });
+    }
+
+    const token = TokenSetter({ id: buddy._id, role: buddy.role });
+    const RefreshTkn = refreshToken({ id: buddy._id, role: buddy.role });
+
+    res.status(200).json({ token, RefreshTkn });
+
+  } catch (error) {
+    next({ statusCode: 500, message: "Login error" });
+  }
+};
+
+export const buddyProfile = async (req, res, next) => {
+  const { id, role } = req.data;
+
+  if (role !== "buddy") {
+    return next({ statusCode: 403, message: "Access denied" });
+  }
+
+  try {
+    const buddy = await buddyModel.findById(id);
+
+    if (!buddy) {
+      return next({ statusCode: 404, message: "Buddy not found" });
+    }
+
+    res.status(200).json(buddy);
+
+  } catch (error) {
+    next({ statusCode: 500, message: "Error fetching profile" });
+  }
+};

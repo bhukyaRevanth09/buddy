@@ -1,19 +1,17 @@
-import { mainRouter } from '../services/routerService.js'
-import {userReg,buddyReg,userLog, buddyLog} from '../Controllers/auth.js'
-import { tokenMiddleware, tokenRefreshWare } from '../middleware/tokenMiddleware.js'
+import express from "express";
+import { sendOtp } from "../otpContoller.js/sendOTP.js";
+import { verifyOtp } from "../otpContoller.js/verifyOTP.js";
+import { resetPasswordOtp } from "../Controllers/auth.js";
+
+const authRouter = express.Router();
+
+// Send OTP
+authRouter.post("/send-otp",sendOtp);
+
+// Verify OTP (optional separate step)
+authRouter.post("/verify-otp", verifyOtp);
 
 
+authRouter.post("/restPassword",resetPasswordOtp)
 
-mainRouter.route('/userReg').post(userReg)
-mainRouter.route('/buddyReg').post(buddyReg)
-mainRouter.route('/userLog').get(tokenMiddleware,userLog)
-mainRouter.route('/buddyLog').get(tokenMiddleware,buddyLog)
-mainRouter.route('/RefreshBuddyLog').post(tokenRefreshWare,buddyLog)
-mainRouter.route('/RefreshUserLog').post(tokenRefreshWare,buddyLog)
-
-
-
-
-
-
-export default mainRouter
+export default authRouter;
