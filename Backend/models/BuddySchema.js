@@ -29,6 +29,11 @@ const buddySchema = new mongoose.Schema({
     type: String,
     default: "buddy"
   },
+  gender:{
+    type:String,
+    enum:["Male","Female","Other","Perfer not to say"],
+    default:"Perfer not to say"
+  },
 
   category: {
     type: String,
@@ -36,12 +41,11 @@ const buddySchema = new mongoose.Schema({
   },
 
   skills: [{ type: String, index: true }],
+  interests: [{ type: String, index: true }],
 
-  experience: {
-    type: Number,
-    default: 0
-  },
-
+ education:{
+  type:String
+ },
   pricePerHour: {
     type: Number,
     required: true
@@ -71,17 +75,10 @@ const buddySchema = new mongoose.Schema({
     lng: Number,
     updatedAt: Date
   },
-
-  verificationStatus: {
-    type: String,
-    enum: ["pending", "accepted", "rejected"],
-    default: "pending"
-  },
-
   accountStatus: {
     type: String,
-    enum: ["active", "suspended", "blocked"],
-    default: "active"
+    enum: ["active", "suspended", "blocked","pending"],
+    default:'pending'
   },
 
   availabilityStatus: {
@@ -122,16 +119,11 @@ const buddySchema = new mongoose.Schema({
     index: true
   },
 
-  documents: [
-    {
-      name: String,
-      url: String
-    }
-  ]
 
 }, { timestamps: true });
 
 buddySchema.index({ geoLocation: "2dsphere" });
 buddySchema.index({ availabilityStatus: 1, verificationStatus: 1 });
 
-export default mongoose.model("Buddy", buddySchema);
+const buddyModel =  mongoose.model("Buddy", buddySchema);
+export default buddyModel

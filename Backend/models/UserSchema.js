@@ -26,7 +26,6 @@ const userSchema = new mongoose.Schema({
  },
  isActive:{type:Boolean,default:true},
  walletBalance:{type:Number,default:0},
- profile:{type:String},
  address:{
     city:String,
     state:String,

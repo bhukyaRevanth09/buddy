@@ -3,90 +3,96 @@ import userModel from "../models/UserSchema.js"
 import buddyModel from '../models/BuddySchema.js'
 import { TokenSetter ,refreshToken} from "../utils/tokenService.js"
 import OTP from "../models/OTP.js"
+import bcrypt from "bcryptjs"
 
 
-export const userReg =  async (req,res,next)=>{
-   const {name,
-          email,
-          password,
-          phone,
-          role,
-          isActive,
-          walletBalance,
-          address,
-          geoLocation} = req.body
+export const userReg = async (req, res, next) => {
+  console.log(req.body);
+  try {
+    const {
+      name,
+      email,
+      password,
+      phone,
+      role = "user",
+      isActive = true,
+      walletBalance = 0,
+      address,
+      geoLocation, // expects { latitude, longitude } from frontend
+    } = req.body;
 
-
-     try {
-            const otpRecord = await OTP.findOne({
-      contact: phone,
-      verified: true
-              });
-
-    if (!otpRecord) {
-      return next({
-        statusCode: 400,
-        message: "Please verify OTP first"
-      });
+    // 1️⃣ Validate required fields
+    if (!name || !email || !password || !phone) {
+      return next({ statusCode: 400, message: "Required fields missing" });
     }
 
+    // 2️⃣ Check if user exists
+    const existingUser = await userModel.findOne({ email });
+    if (existingUser) {
+      return next({ statusCode: 409, message: "User already exists" });
+    }
 
-         const checkingData = await userModel?.findOne({email:email})
-          
-        if(checkingData){
-         return next({statusCode:409 , message:' user already exist !!'})
-        }
+    // 3️⃣ Hash password
+    const hashedPassword = await passwordHashing(password);
 
+    // 4️⃣ Prepare geoLocation for MongoDB
+    let geoPoint = null;
+    if (geoLocation?.latitude && geoLocation?.longitude) {
+      geoPoint = {
+        type: "Point",
+        coordinates: [
+          parseFloat(geoLocation.longitude), // longitude first
+          parseFloat(geoLocation.latitude),  // latitude second
+        ],
+      };
+    } else {
+      // default fallback
+      geoPoint = {
+        type: "Point",
+        coordinates: [0, 0],
+      };
+    }
 
-          if (!name || !email || !role ){
-       return next({statusCode : 400 , message:"data not reached here "})
+    // 5️⃣ Create user
+    const newUser = await userModel.create({
+      name,
+      email,
+      password: hashedPassword,
+      phone,
+      role,
+      isActive,
+      walletBalance,
+      address,
+      geoLocation: geoPoint, // correct GeoJSON
+    });
 
-         }else{
+    if (!newUser) {
+      return next({ statusCode: 500, message: "Failed to save user" });
+    }
 
+    // 6️⃣ Generate tokens
+    const id = newUser._id;
+    const token = TokenSetter({ id, role });
+    const refreshTokenValue = refreshToken({ id, role });
 
-          const hashed  = await passwordHashing(password)
-  
-         
-             const settingData = await   userModel.create({
-            name,
-            email,
-            password:hashed,
-            phone,
-            role,
-            isActive,
-            walletBalance,
-            address,
-            geoLocation
-
-           })
-               await OTP.deleteOne({ _id: otpRecord._id });
-
-           if(settingData){
-             const id = settingData._id
-               const role = settingData.role
-                const token =  TokenSetter({id,role})
-                  const RefreshTkn =  refreshToken({id,role})
-                    res.status(201).json({token,RefreshTkn})
-           }else{
-            return res.status(409).json('data not  saved in db !!')
-           }
-          
-          
-         }
-
-        
-         
-        
-     } catch (error) {
-        console.error(error)
-         return next({statusCode:500,message:"Errror at inter in registration "})
-     }
-
-    
-}
-
+    // 7️⃣ Send response
+    return res.status(201).json({
+      success: true,
+      token,
+      refreshToken: refreshTokenValue,
+      message: "User registered successfully",
+    });
+  } catch (error) {
+    console.error("User registration error:", error);
+    return next({
+      statusCode: 500,
+      message: "Internal server error during registration",
+    });
+  }
+};
 
 export const userLoginPassword = async (req, res, next) => {
+  console.log("userLOginPAssowrd:: ",req.body)
   try {
     const { phone, password } = req.body;
 
@@ -108,12 +114,7 @@ export const userLoginPassword = async (req, res, next) => {
       });
     }
 
-       if(record.otp != otp){
-    return next({
-        statusCode: 400,
-        message: "Invalid OTP"
-      });
-    }
+      
  
 
     // 🔹 4. Generate tokens
@@ -132,13 +133,8 @@ export const userLoginPassword = async (req, res, next) => {
       success: true,
       message: "Login successful",
       token,
-      RefreshTkn,
-      user: {
-        id: user._id,
-        name: user.name,
-        phone: user.phone,
-        role: user.role
-      }
+      RefreshTkn
+     
     });
 
   } catch (error) {
@@ -275,7 +271,7 @@ export const userProfile = async (req, res, next) => {
 
 
 
-
+ 
 
 export const changePassword = async (req, res, next) => {
   try {
@@ -387,103 +383,94 @@ export const resetPasswordOtp = async (req, res, next) => {
 
 
 
-export const buddyReg = async(req,res,next)=>{
+export const buddyReg = async (req, res, next) => {
+  console.log(req?.body)
+  const {
+    name,
+    email,
+    password,
+    phone,
+    role = "buddy",
+    gender,
+    category,
+    skills,
+    interests,
+    education,
+    pricePerHour,
+    address,
+    geoLocation,
+     availabilityStatus,
+    rating = 0,
+    totalReview = 0,
+    totalBooking = 0,
+    isOnline = false,
+    earning = { total: 0, today: 0, thisMonth: 0 },
+    accountStatus 
+  } = req?.body;
 
-  
- const {name,
-        email,
-        password,
-        phone,
-        category,
-        role,
-        skills,
-        experience,
-        pricePerHour,
-        address,
-        geoLocation,
-        availability,
-        document,
-        verificationStatus,
-        rating,
-        totalReview,
-        totalBooking,
-        isOnline,
-        earning} = req?.body
-  
-    console.log(phone)
-try {
-    const otpRecord = await OTP.findOne({
-  contact: phone,
-  verified: true
-});
+  try {
+    // 🔹 Validate required fields
+    if (!name || !email || !skills || !phone) {
+      return next({ statusCode: 400, message: "Required data missing!" });
+    } else if (!/^\d{10}$/.test(phone)) {
+      return next({ statusCode: 400, message: "Invalid phone number!" });
+    }
 
-if (!otpRecord) {
-  return next({
-    statusCode: 400,
-    message: "Please verify OTP first"
-  });
-}
-    
-   if (!name || !email || !skills || !phone ){
-      return next({statusCode:400,message:'data not reached here !'})
-   }
-   else if (! /^\d{10}$/.test(phone)){
-      return next({statuscode:400,message:'phone number not reached here !'})
-   }else{
-      
-      const checkingData = await buddyModel?.findOne({email:email})
-      const phonenumberChecking = await buddyModel?.findOne({phone:phone})
+    // 🔹 Check for duplicates
+    const emailExists = await buddyModel?.findOne({ email });
+    const phoneExists = await buddyModel?.findOne({ phone });
 
-      if (checkingData){
-         
-         return next({statusCode:409,message:"email already exsits"})
-      }
+    if (emailExists) {
+      return next({ statusCode: 409, message: "Email already exists" });
+    }
 
-      if(phonenumberChecking){
-         return next({statusCode:409,message:"phonoe number is already used !!"})
-      }
+    if (phoneExists) {
+      return next({ statusCode: 409, message: "Phone number is already used" });
+    }
 
-      const hashed = await passwordHashing(password)
-   
-        
-      const settingData = await  buddyModel.create({
-          name,
-        email,
-        password:hashed,
-        phone,
-        role,
-        category,
-        skills,
-        experience,
-        pricePerHour,
-        address,
-        geoLocation,
-        availability,
-        document,
-        verificationStatus,
-        rating,
-        totalReview,
-        totalBooking,
-        isOnline,
-        earning
-      })
+    // 🔹 Hash password
+    const hashed = await passwordHashing(password);
 
-  await OTP.deleteOne({ _id: otpRecord._id });
+    // 🔹 Create Buddy
+    const settingData = await buddyModel.create({
+      name,
+      email,
+      password: hashed,
+      phone,
+      role,
+      gender,
+      category,
+      skills,
+      interests,
+      education,
+      pricePerHour,
+      address,
+      geoLocation,
+      availabilityStatus,
+      rating,
+      totalReview,
+      totalBooking,
+      isOnline,
+      earning,
+      accountStatus 
+    });
 
-     if(settingData){
-       const id = settingData._id
-       const role = settingData.role
-        const token =  TokenSetter({id,role})
-       const RefreshTkn =  refreshToken({id,role})
-       res.status(201).json({token,RefreshTkn})
-     }
-   }
-} catch (error) {
-   console.log(error)
-    return next({statusCode:500,message:'Internal server error buddy reg !'})
-}     
-}
-
+    // 🔹 Generate tokens
+    if (settingData) {
+      const id = settingData._id;
+      const role = settingData.role;
+      const token = TokenSetter({ id, role });
+      const RefreshTkn = refreshToken({ id, role });
+      res.status(201).json({ token, RefreshTkn, message: "Buddy registered successfully" });
+    }
+  } catch (error) {
+    console.log(error);
+    return next({
+      statusCode: 500,
+      message: "Internal server error during buddy registration!"
+    });
+  }
+};
 export const buddyLoginOtp = async (req, res, next) => {
   try {
     const { phone, otp } = req.body;
@@ -573,49 +560,63 @@ export const buddyLoginOtp = async (req, res, next) => {
   }
 };
 
-export const buddyLoginPassword= async (req, res, next) => {
+export const buddyLoginPassword = async (req, res, next) => {
+  console.log(req?.body)
   try {
-    const { phone, password } = req.body;
+    const { email, phone, password } = req.body;
 
-    const buddy = await buddyModel.findOne({ phone });
-
-    if (!buddy) {
-      return next({ statusCode: 404, message: "Buddy not found" });
+    //  Validate
+    if ((!email && !phone) || !password) {
+      return next({
+        statusCode: 400,
+        message: "Email/Phone and password required",
+      });
     }
 
+    //  Find user
+    const buddy = await buddyModel.findOne({
+      $or: [{ phone }, { email }],
+    }).select("+password");
+
+    if (!buddy) {
+      return next({
+        statusCode: 401,
+        message: "Invalid credentials",
+      });
+    }
+
+    //  Compare password
     const isMatch = await bcrypt.compare(password, buddy.password);
 
     if (!isMatch) {
-      return next({ statusCode: 400, message: "Invalid password" });
+      return next({
+        statusCode: 401,
+        message: "Invalid credentials",
+      });
     }
 
-    const token = TokenSetter({ id: buddy._id, role: buddy.role });
-    const RefreshTkn = refreshToken({ id: buddy._id, role: buddy.role });
+    // 🔐 Tokens
+    const accessToken = TokenSetter({
+      id: buddy._id,
+      role: buddy.role,
+    });
 
-    res.status(200).json({ token, RefreshTkn });
+    const refreshTokenToken = refreshToken({
+      id: buddy._id,
+      role: buddy.role,
+    });
+
+    // ✅ Response
+    res.status(200).json({
+      success: true,
+      message: "Login successful",
+      accessToken,
+      refreshToken: refreshTokenToken,
+      role: buddy.role,
+    });
 
   } catch (error) {
+    console.log(error);
     next({ statusCode: 500, message: "Login error" });
-  }
-};
-
-export const buddyProfile = async (req, res, next) => {
-  const { id, role } = req.data;
-
-  if (role !== "buddy") {
-    return next({ statusCode: 403, message: "Access denied" });
-  }
-
-  try {
-    const buddy = await buddyModel.findById(id);
-
-    if (!buddy) {
-      return next({ statusCode: 404, message: "Buddy not found" });
-    }
-
-    res.status(200).json(buddy);
-
-  } catch (error) {
-    next({ statusCode: 500, message: "Error fetching profile" });
   }
 };
