@@ -1,7 +1,9 @@
 import { passwordHashing } from "../services/passwordService.js"
+import redis from "../Config/redis.js"
 import userModel from "../models/UserSchema.js"
 import buddyModel from '../models/BuddySchema.js'
-import { TokenSetter ,refreshToken} from "../utils/tokenService.js"
+import{refreshTokenSetter,TokenSetter} from '../utils/tokenService.js'
+import jwt from "jsonwebtoken";
 import OTP from "../models/OTP.js"
 import bcrypt from "bcryptjs"
 
@@ -72,14 +74,14 @@ export const userReg = async (req, res, next) => {
 
     // 6️⃣ Generate tokens
     const id = newUser._id;
-    const token = TokenSetter({ id, role });
-    const refreshTokenValue = refreshToken({ id, role });
+    const accessToken = TokenSetter({ id, role });
+    const refreshTokenValue = refreshTokenSetter({ id, role });
 
     // 7️⃣ Send response
     return res.status(201).json({
       success: true,
-      token,
-      refreshToken: refreshTokenValue,
+      accessToken,
+     refreshToken: refreshTokenValue,
       message: "User registered successfully",
     });
   } catch (error) {
@@ -90,62 +92,53 @@ export const userReg = async (req, res, next) => {
     });
   }
 };
-
 export const userLoginPassword = async (req, res, next) => {
-  console.log("userLOginPAssowrd:: ",req.body)
-  try {
-    const { phone, password } = req.body;
+  
 
-    // 🔹 1. Validate input
-    if (!phone || !password) {
-      return next({
-        statusCode: 400,
-        message: "Phone and password are required"
-      });
+  try {
+    const { email, password } = req.body;
+
+    // 1. Validation
+    if (!email || !password) {
+      return next({ statusCode: 400, message: "Email and password are required" });
     }
 
-    // 🔹 2. Find user
-    const user = await userModel.findOne({ phone });
+    // 2. Find User + Select Password
+    // Note: Use .select("+password") if your Schema has 'select: false'
+    const user = await userModel.findOne({ email }).select("+password");
 
     if (!user) {
-      return next({
-        statusCode: 404,
-        message: "User not found"
-      });
+      return next({ statusCode: 404, message: "User not found" });
     }
 
-      
- 
+    // 3. 🔹 CRITICAL MISSING STEP: Compare Passwords
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return next({ statusCode: 401, message: "Invalid credentials" });
+    }
 
-    // 🔹 4. Generate tokens
-    const token = TokenSetter({
-      id: user._id,
-      role: user.role
-    });
+    // 4. Generate tokens
+    const accessToken = TokenSetter({ id: user._id, role: user.role });
+    const refreshToken = refreshTokenSetter({ id: user._id, role: user.role });
 
-    const RefreshTkn = refreshToken({
-      id: user._id,
-      role: user.role
-    });
-
-    // 🔹 5. Send response
+    // 5. Response (Don't send the password back!)
+    const userResponse = user.toObject();
+    delete userResponse.password;
+      console.log("tokkkkkkkkken:",accessToken,refreshToken)
     res.status(200).json({
       success: true,
       message: "Login successful",
-      token,
-      RefreshTkn
-     
+      accessToken,
+      refreshToken,
+      user: userResponse, // Industry standard: Send user info back
+      role: user.role
     });
 
   } catch (error) {
-    console.error(error);
-    next({
-      statusCode: 500,
-      message: "Login error"
-    });
+    console.error("User Login Error:", error);
+    next({ statusCode: 500, message: "Login error" });
   }
 };
-
 export const userLoginOtp = async (req, res, next) => {
   try {
     const { phone, otp } = req.body;
@@ -198,12 +191,12 @@ export const userLoginOtp = async (req, res, next) => {
     }
 
     //  6. Generate tokens
-    const token = TokenSetter({
+    const accessToken = TokenSetter({
       id: user._id,
       role: user.role
     });
 
-    const RefreshTkn = refreshToken({
+    const RefreshTkn = refreshTokenSetter({
       id: user._id,
       role: user.role
     });
@@ -215,8 +208,8 @@ export const userLoginOtp = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: "User login successful",
-      token,
-      RefreshTkn,
+      accessToken,
+      RefreshToken,
       user: {
         id: user._id,
         name: user.name,
@@ -234,35 +227,77 @@ export const userLoginOtp = async (req, res, next) => {
   }
 };
 
-export const userProfile = async (req, res, next) => {
-  const { id, role } = req.data;
-
-  // 🔒 Role check
-  if (role !== "user") {
-    return next({ statusCode: 403, message: "Access denied" });
-  }
-
+export const userProfile = async (req, res) => {
   try {
-    const user = await userModel.findById(id);
+    // 1. Log for debugging (Remove in production)
+    console.log(`[Profile Fetch]: User ID ${req.userId} accessed their profile.`);
 
-    if (!user) {
-      return next({
-        statusCode: 404,
-        message: "User not found"
+    // 2. req.user is already populated by authMiddleware
+    // It is already filtered to remove the password via .select("-password")
+    if (!req.user) {
+      return res.status(404).json({
+        success: false,
+        message: "User profile not found.",
       });
     }
 
-    // ✅ Only return user data
-    res.status(200).json({
+    // 3. Return the data
+    return res.status(200).json({
       success: true,
-      user
+      user: req.user,
+    });
+    
+  } catch (error) {
+    console.error(`[Profile Controller Error]: ${error.message}`);
+    return res.status(500).json({
+      success: false,
+      message: "An internal server error occurred while fetching the profile.",
+    });
+  }
+};
+
+
+export const updateProfile = async (req, res) => {
+  console.log("update userprofile !")
+  try {
+    const { name, phone, address } = req.body;
+    const userId = req.userId; // Provided by authMiddleware
+
+    // 1. Validation (Optional but recommended)
+    if (phone && phone.length < 10) {
+      return res.status(400).json({ success: false, message: "Invalid phone number." });
+    }
+
+    // 2. Find and Update
+    // We use { new: true } to return the updated document
+    // We use .select("-password") to ensure we don't send back sensitive data
+    const updatedUser = await userModel.findByIdAndUpdate(
+      userId,
+      { 
+        $set: { 
+          name, 
+          phone, 
+          address 
+        } 
+      },
+      { new: true, runValidators: true }
+    ).select("-password").lean();
+
+    if (!updatedUser) {
+      return res.status(404).json({ success: false, message: "User not found." });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      user: updatedUser,
     });
 
   } catch (error) {
-    console.error(error);
-    next({
-      statusCode: 500,
-      message: "Error fetching user profile"
+    console.error(`[Update Profile Error]: ${error.message}`);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update profile.",
     });
   }
 };
@@ -271,59 +306,115 @@ export const userProfile = async (req, res, next) => {
 
 
 
- 
 
-export const changePassword = async (req, res, next) => {
+export const getAccessTokenFromRefresh = async (req, res) => {
+
   try {
-    const { id, role } = req.data; // from auth middleware
+
+    const { refreshToken } = req.body;
+
+    // check refresh token exists
+    if (!refreshToken) {
+
+      return res.status(401).json({
+
+        message: "Refresh token required"
+
+      });
+
+    }
+
+    // verify refresh token
+    const decoded = jwt.verify(
+
+      refreshToken,
+
+      process.env.REFRESH_KEY
+
+    );
+
+    // create new access token
+    const newAccessToken = TokenSetter({
+
+      id: decoded.id,
+
+      role: decoded.role
+
+    });
+
+    return res.status(200).json({
+
+      accessToken: newAccessToken
+
+    });
+
+  } catch (error) {
+
+    return res.status(403).json({
+
+      message: "Refresh token expired, login again"
+
+    });
+
+  }
+
+};
+export const changePassword = async (req, res, next) => {
+  console.log("revanth!!")
+  try {
+    // 🔹 FIX: Use req.user (matched to your updated middleware)
+    const { id, role } = req.user; 
     const { oldPassword, newPassword } = req.body;
 
-    // 🔹 1. Validate input
+    // 1. Validate input
     if (!oldPassword || !newPassword) {
-      return next({
-        statusCode: 400,
+      return res.status(400).json({
+        success: false,
         message: "Old and new password are required"
       });
     }
 
-    // 🔹 2. Select model based on role
-    let Model;
+    // 2. Select model based on role
+    let Model = role === "user" ? userModel : role === "buddy" ? buddyModel : null;
 
-    if (role === "user") {
-      Model = userModel;
-    } else if (role === "buddy") {
-      Model = buddyModel;
-    } else {
-      return next({
-        statusCode: 403,
-        message: "Invalid role"
+    if (!Model) {
+      return res.status(403).json({
+        success: false,
+        message: "Invalid role access"
       });
     }
 
-    // 🔹 3. Find account
-    const account = await Model.findById(id);
+    // 3. Find account
+    const account = await Model.findById(id).select("+password"); // Ensure password field is selected
 
     if (!account) {
-      return next({
-        statusCode: 404,
+      return res.status(404).json({
+        success: false,
         message: "Account not found"
       });
     }
 
-    // 🔹 4. Verify old password
+    // 4. Verify old password
     const isMatch = await bcrypt.compare(oldPassword, account.password);
 
     if (!isMatch) {
-      return next({
-        statusCode: 400,
+      return res.status(400).json({
+        success: false,
         message: "Old password is incorrect"
       });
     }
 
-    // 🔹 5. Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    // 5. Optional: Check if new password is same as old
+    const isSame = await bcrypt.compare(newPassword, account.password);
+    if (isSame) {
+      return res.status(400).json({
+        success: false,
+        message: "New password cannot be the same as the old one"
+      });
+    }
 
-    // 🔹 6. Update password
+    // 6. Hash and Update
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
     account.password = hashedPassword;
     await account.save();
 
@@ -333,47 +424,62 @@ export const changePassword = async (req, res, next) => {
     });
 
   } catch (error) {
-    console.error(error);
-    next({
-      statusCode: 500,
-      message: "Change password error"
-    });
+    console.error("Change Password Error:", error);
+    next(error); // Passing to your global error handler
   }
 };
+
+
 export const resetPasswordOtp = async (req, res, next) => {
+
   try {
-    const { phone, otp, newPassword, role } = req.body;
+    const { email, otp, newPassword, role } = req.body;
 
-    let Model = role === "user" ? userModel : buddyModel;
-
-    const record = await OTP.findOne({ contact: phone });
-
-    if (!record || record.otp !== otp) {
-      return next({ statusCode: 400, message: "Invalid OTP" });
+    // 1. Validation
+    if (!email || !otp || !newPassword || !role) {
+      return res.status(400).json({ success: false, message: "Missing required fields" });
     }
 
-    if (record.expiresAt < new Date()) {
-      return next({ statusCode: 400, message: "OTP expired" });
+    // 2. Identify Model
+    const Model = role === "user" ? userModel : buddyModel;
+
+    // 3. Find OTP in REDIS (Not MongoDB)
+    const key = `otp:${email}`;
+    const storedOtp = await redis.get(key);
+
+    // 4. Verify Existence and Match
+    if (!storedOtp) {
+      return res.status(400).json({ success: false, message: "OTP expired or not found" });
     }
 
-    const account = await Model.findOne({ phone });
+    if (String(storedOtp) !== String(otp)) {
+      return res.status(400).json({ success: false, message: "Invalid OTP code" });
+    }
 
+    // 5. Find the User Account
+    const account = await Model.findOne({ email: email.toLowerCase() });
     if (!account) {
-      return next({ statusCode: 404, message: "Account not found" });
+      return res.status(404).json({ success: false, message: "Account not found" });
     }
 
-    account.password = await bcrypt.hash(newPassword, 10);
+    // 6. Hash New Password & Save
+    const salt = await bcrypt.genSalt(10);
+    account.password = await bcrypt.hash(newPassword, salt);
     await account.save();
 
-    await OTP.deleteOne({ _id: record._id });
+    // 7. Cleanup: Delete used OTP from Redis
+    await redis.del(key);
 
-    res.status(200).json({ message: "Password reset successful" });
+    res.status(200).json({ 
+      success: true, 
+      message: "Password updated successfully." 
+    });
 
   } catch (error) {
-    next({ statusCode: 500, message: "Reset error" });
+    console.error("Reset Password Error:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
-
 
 
 
@@ -384,91 +490,59 @@ export const resetPasswordOtp = async (req, res, next) => {
 
 
 export const buddyReg = async (req, res, next) => {
-  console.log(req?.body)
-  const {
-    name,
-    email,
-    password,
-    phone,
-    role = "buddy",
-    gender,
-    category,
-    skills,
-    interests,
-    education,
-    pricePerHour,
-    address,
-    geoLocation,
-     availabilityStatus,
-    rating = 0,
-    totalReview = 0,
-    totalBooking = 0,
-    isOnline = false,
-    earning = { total: 0, today: 0, thisMonth: 0 },
-    accountStatus 
-  } = req?.body;
-
   try {
-    // 🔹 Validate required fields
-    if (!name || !email || !skills || !phone) {
-      return next({ statusCode: 400, message: "Required data missing!" });
-    } else if (!/^\d{10}$/.test(phone)) {
-      return next({ statusCode: 400, message: "Invalid phone number!" });
+    const { email, phone, password, geoLocation } = req.body;
+
+    // 1. Check for existing Buddy
+    const existingBuddy = await buddyModel.findOne({ $or: [{ email }, { phone }] });
+    if (existingBuddy) {
+      return res.status(409).json({ success: false, message: "Email or Phone already registered" });
     }
 
-    // 🔹 Check for duplicates
-    const emailExists = await buddyModel?.findOne({ email });
-    const phoneExists = await buddyModel?.findOne({ phone });
+    // 2. Hash Password
+    const hashedPassword = await passwordHashing(password);
 
-    if (emailExists) {
-      return next({ statusCode: 409, message: "Email already exists" });
-    }
+    // 3. Create Buddy
+    // Using a separate object ensures no unwanted data enters the DB
+    const newBuddyData = {
+      ...req.body,
+      password: hashedPassword,
+      skills: Array.isArray(req.body.skills) ? req.body.skills : [],
+      interests: Array.isArray(req.body.interests) ? req.body.interests : [],
+      accountStatus: "active",
+      availabilityStatus: "available",
+      isOnline: true,
+      // Ensure this matches the GeoJSON structure
+      geoLocation: {
+        type: "Point",
+        coordinates: geoLocation.coordinates 
+      }
+    };
 
-    if (phoneExists) {
-      return next({ statusCode: 409, message: "Phone number is already used" });
-    }
+    const buddy = await buddyModel.create(newBuddyData);
 
-    // 🔹 Hash password
-    const hashed = await passwordHashing(password);
+    // 4. Generate Tokens
+    const accessToken = TokenSetter({ id: buddy._id, role: "buddy" });
+    const refreshToken = refreshTokenSetter({ id: buddy._id, role: "buddy" });
 
-    // 🔹 Create Buddy
-    const settingData = await buddyModel.create({
-      name,
-      email,
-      password: hashed,
-      phone,
-      role,
-      gender,
-      category,
-      skills,
-      interests,
-      education,
-      pricePerHour,
-      address,
-      geoLocation,
-      availabilityStatus,
-      rating,
-      totalReview,
-      totalBooking,
-      isOnline,
-      earning,
-      accountStatus 
+    res.status(201).json({
+      success: true,
+      message: "Buddy registered successfully",
+      accessToken,
+      refreshToken,
+      buddy: {
+        id: buddy._id,
+        name: buddy.name,
+        email: buddy.email,
+        role: "buddy"
+      }
     });
 
-    // 🔹 Generate tokens
-    if (settingData) {
-      const id = settingData._id;
-      const role = settingData.role;
-      const token = TokenSetter({ id, role });
-      const RefreshTkn = refreshToken({ id, role });
-      res.status(201).json({ token, RefreshTkn, message: "Buddy registered successfully" });
-    }
+     console.log(accessToken,refreshToken,buddy)
+
   } catch (error) {
-    console.log(error);
-    return next({
-      statusCode: 500,
-      message: "Internal server error during buddy registration!"
-    });
+    console.error("Buddy Reg Error:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
 export const buddyLoginOtp = async (req, res, next) => {
@@ -529,7 +603,7 @@ export const buddyLoginOtp = async (req, res, next) => {
       role: buddy.role
     });
 
-    const RefreshTkn = refreshToken({
+    const RefreshTkn = refreshTokenSetter({
       id: buddy._id,
       role: buddy.role
     });
@@ -560,63 +634,57 @@ export const buddyLoginOtp = async (req, res, next) => {
   }
 };
 
-export const buddyLoginPassword = async (req, res, next) => {
-  console.log(req?.body)
-  try {
-    const { email, phone, password } = req.body;
 
-    //  Validate
-    if ((!email && !phone) || !password) {
-      return next({
-        statusCode: 400,
-        message: "Email/Phone and password required",
-      });
+export const buddyLoginPassword = async (req, res, next) => {
+  const { email, password } = req.body;
+
+  try {
+    // 1. Validation check
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: "Email and password are required" });
     }
 
-    //  Find user
-    const buddy = await buddyModel.findOne({
-      $or: [{ phone }, { email }],
-    }).select("+password");
+    // 2. Find buddy and include password
+    const buddy = await buddyModel.findOne({ email }).select("+password");
 
     if (!buddy) {
-      return next({
-        statusCode: 401,
-        message: "Invalid credentials",
-      });
+      return res.status(404).json({ success: false, message: "Buddy not found" });
     }
 
-    //  Compare password
+    // 3. Validate Password
     const isMatch = await bcrypt.compare(password, buddy.password);
-
     if (!isMatch) {
-      return next({
-        statusCode: 401,
-        message: "Invalid credentials",
-      });
+      return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
 
-    // 🔐 Tokens
-    const accessToken = TokenSetter({
-      id: buddy._id,
-      role: buddy.role,
-    });
+    // 4. Generate Tokens
+    // ⚠️ IMPORTANT: Ensure these functions return a string (JWT)
+    const accessToken = TokenSetter({ id: buddy._id, role: "buddy" });
+    const refreshToken = refreshTokenSetter({ id: buddy._id, role: "buddy" });
 
-    const refreshTokenToken = refreshToken({
-      id: buddy._id,
-      role: buddy.role,
-    });
+    // 5. Update Online Status
+    buddy.isOnline = true;
+    await buddy.save();
 
-    // ✅ Response
-    res.status(200).json({
+    // 6. Final Response
+    // This structure allows 'const { accessToken, buddy } = res.data' to work on frontend
+    return res.status(200).json({
       success: true,
       message: "Login successful",
-      accessToken,
-      refreshToken: refreshTokenToken,
-      role: buddy.role,
+      accessToken,    // Top level
+      refreshToken,   // Top level
+      buddy: {        // Profile object
+        id: buddy._id,
+        name: buddy.name,
+        email: buddy.email,
+        role: buddy.role || "buddy",
+        isOnline: buddy.isOnline,
+        category: buddy.category
+      }
     });
 
   } catch (error) {
-    console.log(error);
-    next({ statusCode: 500, message: "Login error" });
+    console.error("Buddy Login Error:", error);
+    res.status(500).json({ success: false, message: "Login server error" });
   }
 };

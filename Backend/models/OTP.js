@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
 const otpSchema = new mongoose.Schema({
-  contact: String, // phone or email
+  email: String, // phone or email
   otp: String,
   expiresAt: Date,
   verified: {

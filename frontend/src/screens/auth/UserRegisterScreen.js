@@ -12,6 +12,7 @@ import axios from "axios";
 import * as Location from "expo-location";
 
 export default function UserRegisterScreen({ navigation }) {
+  console.log(process.env.IPADDRESS)
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -94,7 +95,6 @@ export default function UserRegisterScreen({ navigation }) {
 
       // Send OTP first
       await axios.post("http://10.0.0.19:9090/api/auth/send-otp", {
-        phone: form.phone,
         email: form.email,
         password: form.password,
         role: "user",
@@ -111,7 +111,6 @@ export default function UserRegisterScreen({ navigation }) {
 
       // Navigate to OTP screen
       navigation.navigate("OTP", {
-        phone: form.phone,
         email: form.email,
         role: "user",
         type: "register",
@@ -119,7 +118,7 @@ export default function UserRegisterScreen({ navigation }) {
       });
     } catch (err) {
       console.log(err.response?.data || err.message);
-      Alert.alert("Error", "Failed to send OTP. Try again.");
+      Alert.alert("Error", "user already exists, please Login ?");
     } finally {
       setLoading(false);
     }

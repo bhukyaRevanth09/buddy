@@ -1,85 +1,70 @@
-import { Worker } from "bullmq";
-import IORedis from "ioredis";
-import instantBookingModel from "../models/instantBooking.js";
-import buddyModel from "../models/BuddySchema.js";
+import { Worker } from 'bullmq';
+import redis from '../Config/redis.js';
+import instantBookingModel from '../models/instantBooking.js';
+import { getIO } from '../services/Socket.js';
+import { bookingQueue } from '../Config/queueConfig.js';
 
-const connection = new IORedis({
-  maxRetriesPerRequest: null,
-});
-console.log('worker working')
+const connection = { host: '127.0.0.1', port: 6379 };
 
-const worker = new Worker(
-  "bookingQueue",
-  async (job) => {
 
-    const { bookingId, buddies, index } = job.data;
 
-    console.log("🔁 Processing booking:", bookingId);
+export const startBookingWorker = () => {
+  const worker = new Worker(
+    "bookingQueue",
+    async (job) => {
+      if (job.name !== "check-acceptance") return;
 
-    const booking = await instantBookingModel.findById(bookingId);
+      const { bookingId } = job.data;
 
-    if (!booking || booking.status !== "pending") return;
+      // 🔥 get from redis (NOT Mongo)
+      const raw = await redis.get(`pending_booking:${bookingId}`);
+      if (!raw) return;
 
-    const nextIndex = index + 1;
+      const state = JSON.parse(raw);
 
-    if (nextIndex >= buddies.length) {
-      await instantBookingModel.findByIdAndUpdate(bookingId, {
-        status: "cancelled"
-      });
+      const nextIndex = state.currentIndex + 1;
 
-      console.log(" Booking cancelled:", bookingId);
-      return;
-    }
+      // more buddies available
+      if (nextIndex < state.buddies.length) {
+        state.currentIndex = nextIndex;
 
-    const nextBuddyId = buddies[nextIndex];
+        const nextBuddyId = state.buddies[nextIndex];
 
-    await instantBookingModel.findByIdAndUpdate(bookingId, {
-      buddy: nextBuddyId
-    });
+        await redis.set(
+          `pending_booking:${bookingId}`,
+          JSON.stringify(state),
+          "EX",
+          3600
+        );
 
-    const prevBuddyId = buddies[index];
-    await buddyModel.findByIdAndUpdate(prevBuddyId, {
-      availabilityStatus: "available",
-      currentBooking: null
-    });
+        // notify next buddy
+        getIO().to(nextBuddyId).emit("new-booking-request", {
+          bookingId,
+          customerName: state.customerName,
+          categoryName: state.categoryName,
+          skills: state.skillNames,
+        });
 
-    console.log(" Assigning to next buddy:", nextBuddyId);
+        await bookingQueue.add(
+          "check-acceptance",
+          { bookingId },
+          { delay: 25000 }
+        );
+      } else {
+        // no buddies left
+        getIO()
+          .to(state.user.toString())
+          .emit("booking-failed", {
+            message: "No buddies responded",
+          });
 
-    // 🔥 Notify via Redis Pub/Sub
-    await connection.publish(
-      "booking-channel",
-      JSON.stringify({
-        bookingId,
-        buddyId: nextBuddyId
-      })
-    );
-
-    // 🔁 Retry next
-    await job.queue.add(
-      "retry-booking",
-      {
-        bookingId,
-        buddies,
-        index: nextIndex
-      },
-      {
-        delay: 10000,
-        removeOnComplete: true
+        await redis.del(`pending_booking:${bookingId}`);
       }
-    );
+    },
+    { connection }
+  );
 
-  },
-  {
-    connection,
-    removeOnComplete: true,
-    removeOnFail: true
-  }
-);
-
-worker.on("completed", job => {
-  console.log(`✅ Job completed: ${job.id}`);
-});
-
-worker.on("failed", (job, err) => {
-  console.log(` Job failed: ${err.message}`);
-});
+  worker.on("failed", (job, err) =>
+    console.log(`Job ${job.id} failed: ${err.message}`)
+  );
+};

@@ -3,9 +3,10 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import HomeScreen from "../screens/user/HomeScreen";
-import BookingScreen from "../screens/user/BookingScreen";
-import ProfileScreen from "../screens/user/UserProfile";
+import HomeScreen from "../screens/user/HomeScreen.js";
+// import BookingScreen from "../screens/user/BookingScreen.js";
+import ProfileScreen from "../screens/user/UserProfile.js";
+import TestMap from "../components/map/TestMap.js";
 
 const Tab = createBottomTabNavigator();
 
@@ -55,7 +56,7 @@ export default function BottomTabs() {
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Bookings" component={BookingScreen} />
+      <Tab.Screen name="Booking" component={TestMap} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );

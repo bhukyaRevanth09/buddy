@@ -10,33 +10,18 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import * as Location from "expo-location";
 
-const CATEGORIES = [
-  "Moving Help",
-  "Event Help",
-  "Companion",
-  "Sports Activity",
-  "Daily Help",
-  "Pet Care",
-];
-
-const SKILLS_BY_CATEGORY = {
-  "Moving Help": ["Lifting", "Packing", "Furniture Arrangement", "Box Labeling"],
-  "Event Help": ["Birthday Decoration", "Table Setup", "Setup Help", "Clean Up"],
-  Companion: ["Talking", "Movies", "Travel", "Shopping Companion"],
-  "Sports Activity": ["Cricket Partner", "Football Partner", "Running Partner", "Yoga Partner"],
-  "Daily Help": ["Shopping Help", "Errands", "Cooking Help", "Cleaning Help"],
-  "Pet Care": ["Dog Walking", "Pet Sitting", "Feeding Pets", "Grooming Assistance"],
-};
-
-const INTERESTS = [
-  "Gym","Running","Travel","Movies","Music","Cooking",
-  "Hiking","Cycling","Photography","Reading","Yoga",
-  "Dancing","Gaming","Pet Care","Painting","Shopping",
-];
+const BASE_URL = "http://10.0.0.19:9090/api";
 
 const GENDERS = ["Male", "Female", "Other"];
 
 export default function BuddyRegisterScreen({ navigation }) {
+  const [categories, setCategories] = useState([]);
+  const [skills, setSkills] = useState([]);
+  const [interests, setInterests] = useState([]);
+
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -48,199 +33,383 @@ export default function BuddyRegisterScreen({ navigation }) {
     interests: [],
     education: "",
     pricePerHour: "",
-    location: { latitude: null, longitude: null, address: "" },
+    location: {
+      latitude: null,
+      longitude: null,
+      address: "",
+      street: "",
+      city: "",
+      state: "",
+      pincode: "",
+    },
   });
 
-  const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-
-  // 📍 Get Location
+  // LOCATION
   const getLocation = async () => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        alert("Location permission denied");
-        return;
-      }
+      const { status } =
+        await Location.requestForegroundPermissionsAsync();
+
+      if (status !== "granted") return;
 
       const loc = await Location.getCurrentPositionAsync({});
-      const reverse = await Location.reverseGeocodeAsync({
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-      });
+
+      const reverse =
+        await Location.reverseGeocodeAsync({
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+        });
 
       const place = reverse[0];
+
+      const address = `${place.name || ""}, ${
+        place.street || ""
+      }, ${place.city || ""}, ${place.region || ""}, ${
+        place.postalCode || ""
+      }`;
 
       setForm((prev) => ({
         ...prev,
         location: {
           latitude: loc.coords.latitude,
           longitude: loc.coords.longitude,
-          address: `${place.city || ""}, ${place.region || ""}`,
+          address,
+          street: place.street,
+          city: place.city,
+          state: place.region,
+          pincode: place.postalCode,
         },
       }));
     } catch (err) {
-      alert("Location error");
+      console.log(err);
     }
   };
 
   useEffect(() => {
     getLocation();
+    fetchCategories();
+    fetchInterests();
   }, []);
 
-  const isValid =
-    form.name &&
-    /^[6-9]\d{9}$/.test(form.phone) &&
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email) &&
-    form.password.length >= 6 &&
-    form.gender &&
-    form.category &&
-    form.skills.length > 0 &&
-    form.interests.length > 0 &&
-    form.pricePerHour &&
-    form.location.latitude;
+  // FETCH CATEGORY
+  const fetchCategories = async () => {
+    const res = await axios.get(`${BASE_URL}/user/categories`);
+    setCategories(res.data.data);
+  };
 
+  // FETCH INTEREST
+  const fetchInterests = async () => {
+    const res = await axios.get(`${BASE_URL}/user/interests`);
+    setInterests(res.data.data);
+  };
+
+  // SELECT CATEGORY
+  const handleCategory = async (category) => {
+    setForm({
+      ...form,
+      category: category._id,
+      skills: [],
+    });
+
+    const res = await axios.get(
+      `${BASE_URL}/user/skills/${category._id}`
+    );
+
+    setSkills(res.data.data);
+  };
+
+  // SELECT SKILL / INTEREST
   const toggleItem = (key, value) => {
     const current = form[key];
 
     if (current.includes(value)) {
-      setForm({ ...form, [key]: current.filter((i) => i !== value) });
+      setForm({
+        ...form,
+        [key]: current.filter((i) => i !== value),
+      });
     } else {
-      if (key === "skills" && current.length >= 2) return alert("Max 2 skills");
-      if (key === "interests" && current.length >= 6) return alert("Max 6 interests");
+      if (key === "skills" && current.length >= 3)
+        return alert("Max 3 skills");
 
-      setForm({ ...form, [key]: [...current, value] });
+      if (key === "interests" && current.length >= 6)
+        return alert("Max 6 interests");
+
+      setForm({
+        ...form,
+        [key]: [...current, value],
+      });
     }
   };
 
-  // 🔥 REGISTER → SEND OTP ONLY
-  const handleRegister = async () => {
-    if (!isValid) {
-      alert("Fill all fields correctly");
-      return;
-    }
+  // VALIDATION
+  const validate = () => {
+    if (!form.name) return "Name required";
+    if (!form.email) return "Email required";
+    if (!form.phone) return "Phone required";
+    if (!/^[6-9]\d{9}$/.test(form.phone))
+      return "Invalid phone number";
 
-    try {
-      setLoading(true);
+    if (!form.password || form.password.length < 6)
+      return "Password min 6 char";
 
-      // ✅ SEND OTP FIRST
-      const res = await axios.post(
-        "http://10.0.0.19:9090/api/auth/send-otp",
-        { phone: form.phone,email:form.email,role:"buddy",type:"register" }
-      );
+    if (!form.gender) return "Select gender";
+    if (!form.category) return "Select category";
+    if (form.skills.length === 0)
+      return "Select skills";
+    if (form.interests.length === 0)
+      return "Select interests";
+    if (!form.pricePerHour) return "Enter price";
+    if (!form.location.latitude)
+      return "Location required";
 
-      if (res.data.success) {
-        navigation.navigate("OTP", {
-          role: "buddy",
-          type: "register",
-          phone: form.phone,
-          formData: form, // 🔥 send full data
-        });
-      } else {
-        alert("OTP failed");
+    return null;
+  };
+
+  // REGISTER
+ const handleRegister = async () => {
+  const error = validate();
+  if (error) {
+    alert(error);
+    return;
+  }
+
+  try {
+    setLoading(true);
+
+    // CRITICAL: Format the data for MongoDB GeoJSON [longitude, latitude]
+    const finalFormData = {
+      ...form,
+      geoLocation: {
+        type: "Point",
+        coordinates: [
+          parseFloat(form.location.longitude), // Longitude first
+          parseFloat(form.location.latitude)   // Latitude second
+        ]
       }
+    };
 
-    } catch (err) {
-      console.log(err);
-      alert("Network error");
-    } finally {
-      setLoading(false);
+    // 1. Send OTP first
+    const res = await axios.post(`${BASE_URL}/auth/send-otp`, {
+      email: form.email,
+      role: "buddy",
+      type: "register",
+    });
+
+    if (res.data.success) {
+      // 2. Pass the finalFormData to the OTP screen
+      navigation.navigate("OTP", {
+        role: "buddy",
+        type: "register",
+        email: form.email,
+        formData: finalFormData, 
+      });
     }
-  };
+  } catch (err) {
+    console.error(err);
+    alert(err.response?.data?.message || "Registration failed to start");
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>Become a Buddy</Text>
+      <Text style={styles.title}>
+        Become a Buddy
+      </Text>
 
-      <TextInput placeholder="Name" style={styles.input}
-        onChangeText={(v) => setForm({ ...form, name: v })} />
+      <TextInput
+        placeholder="Name"
+        style={styles.input}
+        onChangeText={(v) =>
+          setForm({ ...form, name: v })
+        }
+      />
 
-      <TextInput placeholder="Email" style={styles.input}
-        onChangeText={(v) => setForm({ ...form, email: v })} />
+      <TextInput
+        placeholder="Email"
+        style={styles.input}
+        onChangeText={(v) =>
+          setForm({ ...form, email: v })
+        }
+      />
 
-  <TextInput
-  placeholder="Phone" style={styles.input} keyboardType="phone-pad" maxLength={10}             
-  onChangeText={(v) => setForm({ ...form, phone: v })}
-/>
+      <TextInput
+        placeholder="Phone"
+        style={styles.input}
+        keyboardType="phone-pad"
+        maxLength={10}
+        onChangeText={(v) =>
+          setForm({ ...form, phone: v })
+        }
+      />
 
-      <TouchableOpacity style={styles.input} onPress={getLocation}>
-        <Text>{form.location.address || "Detect Location"}</Text>
+      <TouchableOpacity
+        style={styles.input}
+        onPress={getLocation}
+      >
+        <Text>
+          {form.location.address ||
+            "Detect Location"}
+        </Text>
       </TouchableOpacity>
 
-      <View>
+      {/* PASSWORD */}
+      <View style={{ position: "relative" }}>
         <TextInput
           placeholder="Password"
           secureTextEntry={!showPassword}
           style={styles.input}
-          onChangeText={(v) => setForm({ ...form, password: v })}
+          onChangeText={(v) =>
+            setForm({ ...form, password: v })
+          }
         />
-        <TouchableOpacity style={styles.eye}
-          onPress={() => setShowPassword(!showPassword)}>
-          <Text>{showPassword ? "Hide" : "Show"}</Text>
+
+        <TouchableOpacity
+          style={styles.eye}
+          onPress={() =>
+            setShowPassword(!showPassword)
+          }
+        >
+          <Text>
+            {showPassword ? "Hide" : "Show"}
+          </Text>
         </TouchableOpacity>
       </View>
 
+      {/* GENDER */}
       <Text style={styles.label}>Gender</Text>
       <View style={styles.row}>
         {GENDERS.map((g) => (
-          <TouchableOpacity key={g}
-            style={[styles.chip, form.gender === g && styles.selectedChip]}
-            onPress={() => setForm({ ...form, gender: g })}>
+          <TouchableOpacity
+            key={g}
+            style={[
+              styles.chip,
+              form.gender === g &&
+                styles.selectedChip,
+            ]}
+            onPress={() =>
+              setForm({ ...form, gender: g })
+            }
+          >
             <Text>{g}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      <Text style={styles.label}>Category</Text>
+      {/* CATEGORY */}
+      <Text style={styles.label}>
+        Select Category
+      </Text>
       <View style={styles.row}>
-        {CATEGORIES.map((c) => (
-          <TouchableOpacity key={c}
-            style={[styles.chip, form.category === c && styles.selectedChip]}
-            onPress={() => setForm({ ...form, category: c, skills: [] })}>
-            <Text>{c}</Text>
+        {categories.map((c) => (
+          <TouchableOpacity
+            key={c._id}
+            style={[
+              styles.chip,
+              form.category === c._id &&
+                styles.selectedChip,
+            ]}
+            onPress={() =>
+              handleCategory(c)
+            }
+          >
+            <Text>{c.name}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
+      {/* SKILLS */}
       {form.category && (
         <>
-          <Text style={styles.label}>Skills</Text>
+          <Text style={styles.label}>
+            Skills (max 3)
+          </Text>
           <View style={styles.row}>
-            {SKILLS_BY_CATEGORY[form.category].map((s) => (
-              <TouchableOpacity key={s}
-                style={[styles.chip, form.skills.includes(s) && styles.selectedChip]}
-                onPress={() => toggleItem("skills", s)}>
-                <Text>{s}</Text>
+            {skills.map((s) => (
+              <TouchableOpacity
+                key={s._id}
+                style={[
+                  styles.chip,
+                  form.skills.includes(s._id) &&
+                    styles.selectedChip,
+                ]}
+                onPress={() =>
+                  toggleItem(
+                    "skills",
+                    s._id
+                  )
+                }
+              >
+                <Text>{s.name}</Text>
               </TouchableOpacity>
             ))}
           </View>
         </>
       )}
 
-      <Text style={styles.label}>Interests</Text>
-      <View style={styles.row}>
-        {INTERESTS.map((i) => (
-          <TouchableOpacity key={i}
-            style={[styles.chip, form.interests.includes(i) && styles.selectedChip]}
-            onPress={() => toggleItem("interests", i)}>
-            <Text>{i}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {/* INTEREST */}
+      {form.skills.length > 0 && (
+        <>
+          <Text style={styles.label}>
+            Interests
+          </Text>
+          <View style={styles.row}>
+            {interests.map((i) => (
+              <TouchableOpacity
+                key={i._id}
+                style={[
+                  styles.chip,
+                  form.interests.includes(
+                    i._id
+                  ) &&
+                    styles.selectedChip,
+                ]}
+                onPress={() =>
+                  toggleItem(
+                    "interests",
+                    i._id
+                  )
+                }
+              >
+                <Text>{i.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </>
+      )}
 
-      <TextInput placeholder="Education (Optional)" style={styles.input}
-        onChangeText={(v) => setForm({ ...form, education: v })} />
+      <TextInput
+        placeholder="Education (optional)"
+        style={styles.input}
+        onChangeText={(v) =>
+          setForm({
+            ...form,
+            education: v,
+          })
+        }
+      />
 
-      <TextInput placeholder="Price ₹" style={styles.input}
-        onChangeText={(v) => setForm({ ...form, pricePerHour: v })} />
+      <TextInput
+        placeholder="Price ₹"
+        style={styles.input}
+        keyboardType="numeric"
+        onChangeText={(v) =>
+          setForm({
+            ...form,
+            pricePerHour: v,
+          })
+        }
+      />
 
       <TouchableOpacity
-        style={[styles.button, (!isValid || loading) && { opacity: 0.5 }]}
-        disabled={!isValid || loading}
+        style={styles.button}
         onPress={handleRegister}
       >
         <Text style={styles.buttonText}>
-          {loading ? "Sending OTP..." : "Register"}
+          {loading
+            ? "Sending OTP..."
+            : "Register"}
         </Text>
       </TouchableOpacity>
     </ScrollView>
@@ -249,13 +418,48 @@ export default function BuddyRegisterScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20 },
-  title: { fontSize: 24, fontWeight: "bold", marginTop: 30, marginBottom: 20 },
-  input: { borderWidth: 1, padding: 12, borderRadius: 10, marginBottom: 15 },
-  label: { fontWeight: "bold", marginBottom: 10 },
-  row: { flexDirection: "row", flexWrap: "wrap" },
-  chip: { borderWidth: 1, padding: 10, borderRadius: 20, margin: 5 },
-  selectedChip: { backgroundColor: "#cce5ff" },
-  button: { backgroundColor: "black", padding: 15, borderRadius: 10,marginBottom:20 },
-  buttonText: { color: "white", textAlign: "center", fontWeight: "bold" },
-  eye: { position: "absolute", right: 15, top: 15 },
+  title: {
+    fontSize: 24,
+    fontWeight: "bold",
+    marginTop: 30,
+  },
+  input: {
+    borderWidth: 1,
+    padding: 12,
+    borderRadius: 10,
+    marginVertical: 8,
+  },
+  label: {
+    fontWeight: "bold",
+    marginTop: 10,
+  },
+  row: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  chip: {
+    borderWidth: 1,
+    padding: 8,
+    borderRadius: 20,
+    margin: 5,
+  },
+  selectedChip: {
+    backgroundColor: "#cce5ff",
+  },
+  button: {
+    backgroundColor: "black",
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 20,
+    marginBottom: 40,
+  },
+  buttonText: {
+    color: "white",
+    textAlign: "center",
+  },
+  eye: {
+    position: "absolute",
+    right: 15,
+    top: 20,
+  },
 });

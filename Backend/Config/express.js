@@ -5,13 +5,14 @@ import errorHandler from '../middleware/errorHandling.js'
 import authRouter from '../Routes/AuthRoute.js'
 import buddyRouter from '../Routes/BuddyRoute.js'
 import userRouter from '../Routes/UserRoute.js'
+import bookingRouter from '../Routes/bookingRoute.js'
 
 
 
+dotenv.config({quiet:true})
 
 const app = express();
 
-dotenv.config({quiet:true})
 
 app.use(express.json());
 app.use(cors());
@@ -19,7 +20,7 @@ app.use(cors());
 app.use('/api/auth',authRouter)
 app.use('/api/buddy',buddyRouter)
 app.use('/api/user',userRouter)
-
+app.use('/api/booking',bookingRouter)
 
 
 app.use(errorHandler)

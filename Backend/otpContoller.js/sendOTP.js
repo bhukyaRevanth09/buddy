@@ -2,17 +2,18 @@ import redis from "../Config/redis.js";
 import { generateOTP } from "../utils/otpGenrate.js";
 import buddyModel from "../models/BuddySchema.js";
 import userModel from "../models/UserSchema.js";
+import { sendEmail } from "../services/emailServices.js";
 
 export const sendOtp = async (req, res, next) => {
-  console.log(req.body)
+  console.log('send OTP ::')
   try {
-    const { phone, type, role } = req.body;
+    const { email, type, role } = req.body;
 
     // 🔹 Validation
-    if (!phone) {
+    if (!email) {
       return res.status(400).json({
         success: false,
-        message: "Phone or Email required",
+        message: "Email required",
       });
     }
 
@@ -23,13 +24,13 @@ export const sendOtp = async (req, res, next) => {
       });
     }
 
-    // 🔥 Select model based on role
+    // 🔥 Select model
     const Model = role === "buddy" ? buddyModel : userModel;
 
-    // 🔍 Check existing user
-    const existingUser = await Model.findOne({phone});
+    // 🔍 Check user
+    const existingUser = await Model.findOne({ email });
 
-    // 🔥 REGISTER FLOW
+    // REGISTER 
     if (type === "register" && existingUser) {
       return res.status(409).json({
         success: false,
@@ -37,7 +38,7 @@ export const sendOtp = async (req, res, next) => {
       });
     }
 
-    // 🔥 LOGIN / FORGOT FLOW
+    // LOGIN / FORGOT
     if ((type === "login" || type === "forgot") && !existingUser) {
       return res.status(404).json({
         success: false,
@@ -45,13 +46,11 @@ export const sendOtp = async (req, res, next) => {
       });
     }
 
-    // 🔥 Create Redis Key (phone/email based)
-    const key = phone ? `otp:${phone}` : `otp:${email}`;
-    const limitKey = phone
-      ? `otp_limit:${phone}`
-      : `otp_limit:${email}`;
-
-    // 🚫 Rate limit (1 min)
+    //  Redis keys
+    const key = `otp:${email}`;
+    const limitKey = `otp_limit:${email}`;
+ console.log("keeeeeeeeeeeeeeeeeey::",key)
+    //  Rate limit
     const limit = await redis.get(limitKey);
     if (limit) {
       return res.status(429).json({
@@ -69,9 +68,15 @@ export const sendOtp = async (req, res, next) => {
     // 🚫 Set rate limit
     await redis.set(limitKey, 1, "EX", 60);
 
-    console.log(`📲 OTP for ${phone || email}:`, otp);
+    // 📧 Send Email
+    try {
+      await sendEmail(email, otp);
+    } catch (err) {
+      console.log("⚠️ Email failed, fallback to console");
+    }
 
-    // 👉 TODO: Integrate SMS / Email service
+    // 🔥 Dev log
+    console.log(`📧 OTP for ${email}:`, otp);
 
     return res.status(200).json({
       success: true,

@@ -2,25 +2,28 @@ import dotenv from 'dotenv';
 import connectDB from './Config/db.js';
 import app from './Config/express.js';
 import http from "http";
-import { initSocket } from './services/chatSocket.js';
-
-
+import { initSocket } from './services/Socket.js';
+import seed from '../Backend/seedData/skillSeedData.js'
+import { selectcategory } from './testing.js';
+import { startBookingWorker } from './utils/Worker.js';
 
 
 dotenv.config({ quiet: true });
 
 const server = http.createServer(app);
 
+
+ startBookingWorker()
 // initialize socket
 const io = initSocket(server);
 
+// ADD THIS LINE: Make io accessible via the request object
+app.set("io", io); 
 
 // connect DB
 connectDB();
 
 const port = process.env.PORT_NO || 3000;
-
-//start this server (not app)
 server.listen(port, () => {
   console.log(`server running on port ${port}`);
 });

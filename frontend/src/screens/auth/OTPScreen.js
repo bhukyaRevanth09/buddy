@@ -1,254 +1,290 @@
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  Alert,
+  ActivityIndicator,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from "react-native";
-import { useState, useRef, useEffect } from "react";
-import axios from "axios";
-import { useAuth } from "../../context/AuthContext";
 
-export default function OTPScreen({ route, navigation }) {
-  const { phone, email, role, type, formData } = route.params;
+import axios from "axios";
+import { useAuth } from "../../context/AuthContext.js";
+
+const BASE_URL = "http://10.0.0.19:9090/api";
+
+export default function OTPScreen({ route }) {
+  const { email, role, type, formData } = route?.params || {};
   const { login } = useAuth();
 
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
-  const inputs = useRef([]);
-
   const [timer, setTimer] = useState(30);
   const [loading, setLoading] = useState(false);
 
-  //  Timer
+  const inputs = useRef([]);
+
+  // TIMER
   useEffect(() => {
-    if (timer === 0) return;
-
-    const interval = setInterval(() => {
-      setTimer((prev) => prev - 1);
-    }, 1000);
-
+    let interval;
+    if (timer > 0) {
+      interval = setInterval(() => {
+        setTimer((prev) => prev - 1);
+      }, 1000);
+    }
     return () => clearInterval(interval);
   }, [timer]);
 
-  //  Handle OTP Input
   const handleChange = (text, index) => {
-    if (text.length > 1) return;
+    const clean = text.replace(/[^0-9]/g, "");
 
     const newOtp = [...otp];
-    newOtp[index] = text;
+    newOtp[index] = clean;
     setOtp(newOtp);
 
-    if (text && index < 5) {
+    if (clean && index < 5) {
       inputs.current[index + 1]?.focus();
     }
   };
 
-  //  Backspace handling
   const handleKeyPress = (e, index) => {
     if (e.nativeEvent.key === "Backspace" && !otp[index] && index > 0) {
       inputs.current[index - 1]?.focus();
     }
   };
 
-  //  VERIFY OTP + REGISTER
+  // VERIFY OTP
   const handleVerify = async () => {
     const finalOtp = otp.join("");
 
     if (finalOtp.length !== 6) {
-      return alert("Enter full OTP");
+      Alert.alert("Enter valid OTP");
+      return;
     }
 
     try {
       setLoading(true);
 
-      // 🔍 Step 1: Verify OTP
+      console.log("VERIFY PAYLOAD:", {
+        email,
+        role,
+        otp: finalOtp,
+        type,
+      });
+
+      // 1 VERIFY OTP
       const verifyRes = await axios.post(
-        "http://10.0.0.19:9090/api/auth/verify-otp",
+        `${BASE_URL}/auth/verify-otp`,
         {
-          phone,
+          email,
           role,
           otp: finalOtp,
           type,
         }
       );
 
+      console.log("VERIFY RESPONSE:", verifyRes.data);
+
       if (!verifyRes.data.success) {
-        return alert("Invalid OTP");
+        Alert.alert("Invalid OTP");
+        return;
       }
 
-      let registerRes;
+      let res;
 
-      // 🧑‍🔧 BUDDY REGISTER
-      if (type === "register" && role === "buddy" && verifyRes) {
-        const payload = {
-          ...formData,
-          geoLocation: {
-            type: "Point",
-            coordinates: [
-              formData?.location?.longitude || 0,
-              formData?.location?.latitude || 0,
-            ],
-          },
-          address: formData?.location || {},
-          accountStatus: "active",
-          availabilityStatus: "offline",
-          isOnline: false,
-        };
+      // 2 REGISTER
+      if (type === "register") {
+        const endpoint =
+          role === "buddy"
+            ? "/buddy/buddy-register"
+            : "/user/user-register";
 
-        registerRes = await axios.post(
-          "http://10.0.0.19:9090/api/buddy/buddy-register",
-          payload
-        );
-      }
+        console.log("REGISTER DATA:", formData);
 
-      //  USER REGISTER
-      else if (type === "register" && role === "user" && verifyRes) {
-        registerRes = await axios.post(
-          "http://10.0.0.19:9090/api/user/user-register",
+        res = await axios.post(
+          `${BASE_URL}${endpoint}`,
           formData
         );
       }
 
-      // 🔐 LOGIN / FORGOT FLOW (optional future)
-      else {
-        alert("OTP Verified ✅");
-        return;
+      // 3 LOGIN
+      if (type === "login") {
+        res = await axios.post(
+          `${BASE_URL}/auth/login`,
+          { email, role }
+        );
       }
 
-      // ✅ Success
-      if (registerRes?.data?.success) {
-        alert("Registration Successful 🎉");
-        login(role);
+      console.log("FINAL RESPONSE:", res?.data);
+
+      // 4 LOGIN CONTEXT
+      if (res?.data?.success) {
+        console.log("LOGIN ROLE:", role);
+
+        await login(role, res.data);
       } else {
-        alert(registerRes?.data?.message || "Registration failed");
+        Alert.alert("Something went wrong");
       }
+    } catch (error) {
+      console.log("OTP ERROR:", error?.response?.data);
 
-    } catch (err) {
-      console.log(err.response?.data || err.message);
-      alert("Error verifying OTP");
+      Alert.alert(
+        "Error",
+        error?.response?.data?.message || "OTP failed"
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  // 🔁 RESEND OTP
+  // RESEND OTP
   const resendOtp = async () => {
     try {
-      await axios.post("http://10.0.0.19:9090/api/auth/send-otp", {
-        phone,
+      setOtp(["", "", "", "", "", ""]);
+      setTimer(30);
+      inputs.current[0]?.focus();
+
+      await axios.post(`${BASE_URL}/auth/send-otp`, {
+        email,
         role,
         type,
       });
 
-      setTimer(30);
+      Alert.alert("OTP resent");
     } catch (err) {
-      alert("Error resending OTP");
+      Alert.alert("Failed to resend OTP");
     }
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Verify OTP</Text>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Verification Code</Text>
 
-      <Text style={styles.subtitle}>
-        Sent to {phone || email}
-      </Text>
+          <Text style={styles.subtitle}>
+            We have sent a 6 digit code to
+          </Text>
 
-      {/* 🔢 OTP BOXES */}
-      <View style={styles.otpContainer}>
-        {otp.map((digit, index) => (
-          <TextInput
-            key={index}
-            ref={(ref) => (inputs.current[index] = ref)}
-            style={styles.otpBox}
-            keyboardType="number-pad"
-            maxLength={1}
-            value={digit}
-            onChangeText={(text) => handleChange(text, index)}
-            onKeyPress={(e) => handleKeyPress(e, index)}
-          />
-        ))}
-      </View>
+          <Text style={styles.emailText}>{email}</Text>
+        </View>
 
-      {/* 🔐 VERIFY BUTTON */}
-      <TouchableOpacity
-        style={[styles.button, loading && { opacity: 0.5 }]}
-        onPress={handleVerify}
-        disabled={loading}
-      >
-        <Text style={styles.buttonText}>
-          {loading ? "Verifying..." : "Verify OTP"}
-        </Text>
-      </TouchableOpacity>
+        <View style={styles.otpRow}>
+          {otp.map((digit, index) => (
+            <TextInput
+              key={index}
+              ref={(ref) => (inputs.current[index] = ref)}
+              value={digit}
+              style={styles.otpBox}
+              keyboardType="number-pad"
+              maxLength={1}
+              onChangeText={(text) =>
+                handleChange(text, index)
+              }
+              onKeyPress={(e) =>
+                handleKeyPress(e, index)
+              }
+              selectTextOnFocus
+            />
+          ))}
+        </View>
 
-      {/* 🔁 RESEND */}
-      {timer > 0 ? (
-        <Text style={styles.timer}>Resend OTP in {timer}s</Text>
-      ) : (
-        <TouchableOpacity onPress={resendOtp}>
-          <Text style={styles.resend}>Resend OTP</Text>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={handleVerify}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.btnText}>
+              Verify & Continue
+            </Text>
+          )}
         </TouchableOpacity>
-      )}
-    </View>
+
+        <View style={styles.footer}>
+          {timer > 0 ? (
+            <Text style={styles.timer}>
+              Resend in{" "}
+              <Text style={{ fontWeight: "bold" }}>
+                {timer}s
+              </Text>
+            </Text>
+          ) : (
+            <TouchableOpacity onPress={resendOtp}>
+              <Text style={styles.resend}>
+                Resend OTP
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    </TouchableWithoutFeedback>
   );
 }
 
-// 🎨 STYLES
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: "center",
     justifyContent: "center",
-    padding: 20,
+    padding: 24,
+    backgroundColor: "#fff",
   },
-
+  header: {
+    alignItems: "center",
+    marginBottom: 40,
+  },
   title: {
-    fontSize: 24,
+    fontSize: 26,
+    fontWeight: "800",
+  },
+  subtitle: {
+    marginTop: 8,
+    color: "#666",
+  },
+  emailText: {
+    marginTop: 5,
+    fontWeight: "bold",
+    color: "#4CAF50",
+  },
+  otpRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 40,
+  },
+  otpBox: {
+    width: 48,
+    height: 58,
+    borderWidth: 2,
+    borderColor: "#eee",
+    borderRadius: 12,
+    textAlign: "center",
+    fontSize: 22,
     fontWeight: "bold",
   },
-
-  subtitle: {
-    marginVertical: 10,
-    color: "gray",
-  },
-
-  otpContainer: {
-    flexDirection: "row",
-    marginVertical: 20,
-  },
-
-  otpBox: {
-    width: 45,
-    height: 55,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    textAlign: "center",
-    fontSize: 20,
-    marginHorizontal: 5,
-    borderRadius: 10,
-  },
-
   button: {
-    backgroundColor: "black",
-    padding: 15,
-    borderRadius: 10,
-    width: "100%",
+    backgroundColor: "#4CAF50",
+    padding: 16,
+    borderRadius: 12,
     alignItems: "center",
   },
-
-  buttonText: {
-    color: "white",
+  btnText: {
+    color: "#fff",
     fontWeight: "bold",
+    fontSize: 16,
   },
-
+  footer: {
+    marginTop: 30,
+    alignItems: "center",
+  },
   timer: {
-    marginTop: 15,
-    color: "gray",
+    color: "#999",
   },
-
   resend: {
-    marginTop: 15,
-    color: "blue",
+    color: "#4CAF50",
     fontWeight: "bold",
   },
 });

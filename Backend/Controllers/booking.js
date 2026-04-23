@@ -1,48 +1,72 @@
-import serviceBooking from "../models/serviceBooking.js";
-import { getIO } from "../services/chatSocket.js";
+import buddyModel from '../models/BuddySchema.js';
+import { getIO } from '../services/Socket.js'; 
+import redis from '../Config/redis.js';
 
-;
-
-export const createServiceBooking = async (req, res, next) => {
+export const toggleOnlineStatus = async (req, res) => {
   try {
-    const io = getIO() 
-    
-    const {
+    const buddyId = req.userId;
+    const { status } = req.body;
+
+    const updatedBuddy = await buddyModel.findByIdAndUpdate(
       buddyId,
-      serviceType,
-      scheduledDate,
-      duration,
-      price,
-      address
-    } = req.body;
+      {
+        isOnline: status,
+        availabilityStatus: status ? "available" : "offline",
+        updatedAt: new Date()
+      },
+      {
+        returnDocument: "after"
+      }
+    );
 
-    const userId = req.user.id;
+    if (!updatedBuddy) {
+      return res.status(404).json({
+        success: false,
+        message: "Buddy not found"
+      });
+    }
 
-    const booking = await serviceBooking.create({
-      user: userId,
-      buddy: buddyId,
-      serviceType,
-      scheduledDate,
-      duration,
-      price,
-      address
+    /*
+    =========================
+    REDIS PRESENCE
+    =========================
+    */
+    if (status) {
+      await redis.set(`status:${buddyId}`, "online", "EX", 3600);
+    } else {
+      await redis.del(`status:${buddyId}`);
+    }
+
+    /*
+    =========================
+    SOCKET BROADCAST
+    =========================
+    */
+    const io = getIO();
+
+    io.emit("buddy_status_updated", {
+      buddyId: updatedBuddy._id.toString(), // ✅ important
+      isOnline: updatedBuddy.isOnline,
+      availabilityStatus: updatedBuddy.availabilityStatus,
+      lastSeen: updatedBuddy.updatedAt
     });
 
-
-
-// notify buddy
-io.to(buddyId.toString()).emit("new-booking", {
-  message: "New booking request",
-  booking
-});
-
-    res.status(201).json({
+    /*
+    =========================
+    RESPONSE
+    =========================
+    */
+    res.json({
       success: true,
-      message: "Service booking scheduled",
-      data: booking
+      isOnline: updatedBuddy.isOnline
     });
 
   } catch (error) {
-    next(error);
+    console.log("toggle error", error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };

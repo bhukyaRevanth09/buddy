@@ -3,62 +3,46 @@ import userModel from "../models/UserSchema.js";
 import buddyModel from "../models/BuddySchema.js";
 
 export const verifyOtp = async (req, res, next) => {
+  console.log(req?.body)
   try {
-    const { phone, email, otp, role, type } = req.body;
-    console.log(req.body)
-    //  Validation
-    if ((!phone && !email) || !otp || !role) {
+    const { email, otp, role, type } = req.body;
+
+    if (!email || !otp || !role || !type) {
       return res.status(400).json({
         success: false,
-        message: "Phone/Email, OTP and role required",
+        message: "Email, OTP, role and type required",
       });
     }
 
-    // Create Redis Key
-    const key = phone ? `otp:${phone}` : `otp:${email}`;
+    const key = `otp:${email}`;
 
-    //  Get OTP
+    // get otp from redis
     const storedOtp = await redis.get(key);
 
     if (!storedOtp) {
       return res.status(400).json({
         success: false,
-        message: "OTP expired or not found",
+        message: "OTP expired",
       });
     }
 
-    if (storedOtp !== otp) {
+    // compare otp
+    if (String(storedOtp) !== String(otp)) {
       return res.status(400).json({
         success: false,
         message: "Invalid OTP",
       });
     }
 
-    //  Delete OTP after success
+    // delete otp after success
     await redis.del(key);
 
-    // 🔥 Select Model (User / Buddy)
+    // choose model
     const Model = role === "buddy" ? buddyModel : userModel;
 
-    // 🔍 Find user (for login / forgot)
-    if (type === "login" || type === "forgot") {
-      const user = await userModel.findOne({
-        $or: [{ phone }, { email }],
-      });
-
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: `${role} not found`,
-        });
-      }
-    }
-
-    // 🔍 Check duplicate (for register)
+    // REGISTER
     if (type === "register") {
-      const existing = await Model.findOne({
-        $or: [{ phone }, { email }],
-      });
+      const existing = await Model.findOne({ email });
 
       if (existing) {
         return res.status(409).json({
@@ -66,15 +50,35 @@ export const verifyOtp = async (req, res, next) => {
           message: `${role} already exists`,
         });
       }
+
+      return res.status(200).json({
+        success: true,
+        message: "OTP verified",
+      });
     }
 
-    return res.status(200).json({
-      success: true,
-      message: "OTP verified successfully",
-    });
+    // LOGIN / FORGOT
+    if (type === "login" || type === "forgot") {
+      const user = await Model.findOne({ email });
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: `${role} not found`,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "OTP verified",
+      });
+    }
 
   } catch (error) {
     console.log(error);
-    next({ statusCode: 500, message: "OTP verify error" });
+    next({
+      statusCode: 500,
+      message: "OTP verification failed",
+    });
   }
 };

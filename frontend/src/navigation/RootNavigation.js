@@ -1,23 +1,22 @@
-import React, { useState } from "react";
-import { NavigationContainer } from "@react-navigation/native";
-import { useAuth } from "../context/AuthContext";
-import AuthStack from "./AuthStack";
-import UserStack from "./UserStack";
-import BuddyStack from "./BuddyStack";
+import React from "react";
+import { View, ActivityIndicator } from "react-native";
+import { useAuth } from "../context/AuthContext.js";
+import BuddyStack from "./BuddyStack.js";
+import UserStack from "./UserStack.js";
+import AuthStack from "./AuthStack.js";
 
+export default function RootNavigator() {
+  const { isLoggedIn, role, loading } = useAuth();
 
-export default function RootNavigation() {
-  const { isLoggedIn, role } = useAuth();
+  if (loading) {
+    return (
+      <View style={{ flex:1, justifyContent:"center", alignItems:"center" }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
 
-  return (
-    <NavigationContainer>
-      {!isLoggedIn ? (
-        <AuthStack />
-      ) : role === "buddy" ? (
-        <BuddyStack />
-      ) : (
-        <UserStack />
-      )}
-    </NavigationContainer>
-  );
+  if (!isLoggedIn) return <AuthStack />;
+  if (role === "buddy") return <BuddyStack />;
+  return <UserStack />;
 }

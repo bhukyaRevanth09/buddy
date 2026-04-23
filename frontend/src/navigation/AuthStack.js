@@ -7,6 +7,7 @@ import UserLoginScreen from "../screens/auth/UserLoginScreen.js";
 import UserRegisterScreen from "../screens/auth/UserRegisterScreen.js";
 import BuddyLoginScreen from "../screens/auth/BuddyLoginScreen.js";
 import BuddyRegisterScreen from "../screens/auth/BuddyRegisterScreen.js";
+import ForgotPasswordScreen from "../components/ForgotPassword.js";
 
 const Stack = createNativeStackNavigator();
 
@@ -20,6 +21,7 @@ export default function AuthStack() {
       <Stack.Screen name="BuddyLogin" component={BuddyLoginScreen} />
       <Stack.Screen name="BuddyRegister" component={BuddyRegisterScreen} />
       <Stack.Screen name="OTP" component={OTPScreen} />
+      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen}/>
     </Stack.Navigator>
   );
 }

@@ -1,3 +1,4 @@
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -6,151 +7,209 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from "react-native";
-import { useState } from "react";
-import axios from "axios";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Ionicons } from "@expo/vector-icons";
+
+// Context & API
+import { useAuth } from "../../context/AuthContext.js";
+import api from "../../api/Apiclient.js"; 
 
 export default function UserLoginScreen({ navigation }) {
-  const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
+  const { login } = useAuth();
+
+  // Form State
+  const [formData, setFormData] = useState({ email: "", password: "" });
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Validation
+  // Input handler
+  const handleInputChange = (field, value) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors((prev) => ({ ...prev, [field]: "" }));
+  };
+
   const validate = () => {
     let newErrors = {};
+    const emailRegex = /^\S+@\S+\.\S+$/;
 
-    if (!phone) {
-      newErrors.phone = "Phone is required";
-    } else if (!/^[6-9]\d{9}$/.test(phone)) {
-      newErrors.phone = "Enter a valid phone number";
+    if (!formData.email) {
+      newErrors.email = "Email is required";
+    } else if (!emailRegex.test(formData.email)) {
+      newErrors.email = "Enter a valid email address";
     }
 
-    if (!password) {
-      newErrors.password = "Password required";
-    } else if (password.length < 6) {
-      newErrors.password = "Min 6 characters";
+    if (!formData.password) {
+      newErrors.password = "Password is required";
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // Handle Login
-  const handleLogin = async () => {
-    if (!validate()) return;
+const handleLogin = async () => {
+  if (!validate()) return;
+  setLoading(true);
 
-    const payload = { phone, password };
+  try {
+    const res = await api.post("/user/user-login", {
+      email: formData.email.trim().toLowerCase(),
+      password: formData.password,
+      role: "user",
+    });
 
-    setLoading(true);
-
-    try {
-      const response = await axios.post(
-        "https://10.0.0.19:9090/api/user/user-login-password",
-        payload
-      );
-
-      setLoading(false);
-
-      if (response.data.success) {
-        const { token, RefreshTkn } = response.data;
-
-        // Save tokens
-        await AsyncStorage.setItem("token", token);
-        await AsyncStorage.setItem("refreshToken", RefreshTkn);
-
-        Alert.alert("Success", response.data.message);
-
-        // Navigate to Home
-        navigation.replace("Home");
-      }
-    } catch (error) {
-      setLoading(false);
-      console.log("Login error:", error.response?.data || error.message);
-      Alert.alert(
-        "Login Failed",
-        error.response?.data?.message || "Something went wrong"
-      );
+    if (res?.data?.success) {
+      // THIS IS THE ONLY LINE YOU NEED.
+      // Once this runs, RootNavigation re-renders and swaps stacks.
+      await login("user", res.data); 
+    } else {
+      Alert.alert("Login Failed", res.data?.message || "Invalid credentials");
     }
-  };
-
+  } catch (error) {
+    Alert.alert("Error", error.response?.data?.message || "Server error");
+  } finally {
+    // We only set loading false if the login failed. 
+    // If it succeeds, this component unmounts anyway.
+    setLoading(false); 
+  }
+};
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Login</Text>
-
-      {/* Phone */}
-      <TextInput
-        placeholder="Phone"
-        value={phone}
-        onChangeText={(text) => {
-          setPhone(text);
-          setErrors({ ...errors, phone: "" });
-        }}
-        style={[styles.input, errors.phone && styles.errorInput]}
-        keyboardType="phone-pad"
-      />
-      {errors.phone && <Text style={styles.errorText}>{errors.phone}</Text>}
-
-      {/* Password */}
-      <View style={{ position: "relative" }}>
-        <TextInput
-          placeholder="Password"
-          secureTextEntry={!showPassword}
-          value={password}
-          onChangeText={(text) => {
-            setPassword(text);
-            setErrors({ ...errors, password: "" });
-          }}
-          style={[styles.input, errors.password && styles.errorInput]}
-        />
-        <TouchableOpacity
-          style={styles.eye}
-          onPress={() => setShowPassword(!showPassword)}
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === "ios" ? "padding" : "height"} 
+        style={styles.mainWrapper}
+      >
+        <ScrollView
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Text>{showPassword ? "Hide" : "Show"}</Text>
-        </TouchableOpacity>
-      </View>
-      {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
+          <View style={styles.header}>
+            <Text style={styles.title}>Welcome Back</Text>
+            <Text style={styles.subtitle}>Sign in to continue as a User</Text>
+          </View>
 
-      {/* Login Button */}
-      <TouchableOpacity
-        style={[styles.button, (!phone || !password || loading) && styles.disabledButton]}
-        onPress={handleLogin}
-        disabled={!phone || !password || loading}
-      >
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
-      </TouchableOpacity>
+          {/* Email Field */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Email Address</Text>
+            <TextInput
+              placeholder="name@example.com"
+              value={formData.email}
+              onChangeText={(text) => handleInputChange("email", text)}
+              style={[styles.input, errors.email && styles.errorInput]}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              placeholderTextColor="#ADB5BD"
+            />
+            {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
+          </View>
 
-      {/* Forgot Password */}
-      <Text
-        style={styles.link}
-        onPress={() => navigation.navigate("OTP", { type: "forgot", phone })}
-      >
-        Forgot Password?
-      </Text>
+          {/* Password Field */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Password</Text>
+            <View style={styles.passwordWrapper}> 
+              <TextInput
+                placeholder="Enter password"
+                secureTextEntry={!showPassword}
+                value={formData.password}
+                onChangeText={(text) => handleInputChange("password", text)}
+                style={[styles.input, { flex: 1 }, errors.password && styles.errorInput]}
+                autoCapitalize="none"
+                placeholderTextColor="#ADB5BD"
+              />
+              <TouchableOpacity
+                style={styles.eyeBtn}
+                onPress={() => setShowPassword(!showPassword)}
+              >
+                <Ionicons 
+                  name={showPassword ? "eye-off" : "eye"} 
+                  size={22} 
+                  color="#6C757D" 
+                />
+              </TouchableOpacity>
+            </View>
+            {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
+          </View>
 
-      {/* Register */}
-      <Text
-        style={styles.link}
-        onPress={() => navigation.navigate("UserRegister")}
-      >
-        Don't have an account? Register
-      </Text>
-    </View>
+          {/* Login Button */}
+          <TouchableOpacity
+            style={[styles.loginBtn, loading && styles.btnDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.btnText}>Sign In</Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Footer Links */}
+          <View style={styles.footer}>
+            <TouchableOpacity onPress={() => navigation.navigate("ForgotPassword")}>
+              <Text style={styles.linkText}>Forgot Password?</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.signupBox}
+              onPress={() => navigation.navigate("Home")} // Point this to your registration screen
+            >
+              <Text style={styles.footerText}>
+                Don't have an account? <Text style={styles.boldLink}>Sign Up</Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "center", padding: 20 },
-  title: { fontSize: 26, fontWeight: "bold", marginBottom: 20 },
-  input: { borderWidth: 1, borderColor: "#ddd", padding: 12, borderRadius: 10, marginBottom: 10 },
-  errorInput: { borderColor: "red" },
-  errorText: { color: "red", marginBottom: 10, fontSize: 12 },
-  button: { backgroundColor: "black", padding: 14, borderRadius: 10, marginTop: 10 },
-  disabledButton: { backgroundColor: "gray" },
-  buttonText: { color: "white", textAlign: "center", fontWeight: "bold" },
-  link: { marginTop: 15, textAlign: "center", color: "blue" },
-  eye: { position: "absolute", right: 15, top: 15 },
+  mainWrapper: { flex: 1, backgroundColor: "#fff" },
+  container: { flexGrow: 1, padding: 25, justifyContent: "center" },
+  header: { marginBottom: 35 },
+  title: { fontSize: 30, fontWeight: "bold", color: "#212529" },
+  subtitle: { fontSize: 16, color: "#6C757D", marginTop: 5 },
+  fieldGroup: { marginBottom: 20 },
+  label: { fontSize: 14, fontWeight: "600", color: "#495057", marginBottom: 8 },
+  input: { 
+    height: 55, 
+    borderWidth: 1, 
+    borderColor: "#DEE2E6", 
+    borderRadius: 12, 
+    paddingHorizontal: 15, 
+    fontSize: 16, 
+    backgroundColor: "#F8F9FA",
+    color: "#000"
+  },
+  passwordWrapper: { flexDirection: "row", alignItems: "center" },
+  eyeBtn: { position: "absolute", right: 15 },
+  errorInput: { borderColor: "#DC3545" },
+  errorText: { color: "#DC3545", fontSize: 12, marginTop: 5, fontWeight: "500" },
+  loginBtn: { 
+    backgroundColor: "#007AFF", 
+    height: 55, 
+    borderRadius: 12, 
+    justifyContent: "center", 
+    alignItems: "center", 
+    marginTop: 10,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 }
+  },
+  btnDisabled: { backgroundColor: "#B0D4FF" },
+  btnText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
+  footer: { marginTop: 30, alignItems: "center" },
+  linkText: { color: "#007AFF", fontWeight: "600" },
+  signupBox: { marginTop: 20 },
+  footerText: { color: "#6C757D", fontSize: 14 },
+  boldLink: { color: "#007AFF", fontWeight: "bold" }
 });
