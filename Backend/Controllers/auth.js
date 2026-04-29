@@ -308,56 +308,37 @@ export const updateProfile = async (req, res) => {
 
 
 export const getAccessTokenFromRefresh = async (req, res) => {
-
   try {
-
     const { refreshToken } = req.body;
 
-    // check refresh token exists
     if (!refreshToken) {
-
       return res.status(401).json({
-
-        message: "Refresh token required"
-
+        success: false,
+        message: "Refresh token required",
       });
-
     }
 
-    // verify refresh token
     const decoded = jwt.verify(
-
       refreshToken,
-
       process.env.REFRESH_KEY
-
     );
 
-    // create new access token
     const newAccessToken = TokenSetter({
-
       id: decoded.id,
-
-      role: decoded.role
-
+      role: decoded.role,
     });
 
     return res.status(200).json({
-
-      accessToken: newAccessToken
-
+      success: true,
+      accessToken: newAccessToken,
     });
 
   } catch (error) {
-
     return res.status(403).json({
-
-      message: "Refresh token expired, login again"
-
+      success: false,
+      message: "Refresh token expired, login again",
     });
-
   }
-
 };
 export const changePassword = async (req, res, next) => {
   console.log("revanth!!")

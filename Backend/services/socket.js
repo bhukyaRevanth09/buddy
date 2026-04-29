@@ -18,10 +18,21 @@ export const initSocket = (server) => {
   */
   io.use((socket, next) => {
     try {
-      const token = socket.handshake.auth?.token;
+      let token = socket.handshake.auth?.token;
 
       if (!token) {
-        return next(new Error("Socket auth failed"));
+        console.log("❌ No socket token");
+        return next(new Error("NO_TOKEN"));
+      }
+
+      // remove Bearer
+      if (typeof token === "string" && token.startsWith("Bearer ")) {
+        token = token.split(" ")[1];
+      }
+
+      // if JSON accidentally sent
+      if (typeof token === "object" && token.accessToken) {
+        token = token.accessToken;
       }
 
       const decoded = jwt.verify(token, process.env.JWT_KEY);
@@ -29,11 +40,19 @@ export const initSocket = (server) => {
       socket.userId = decoded.id || decoded._id;
       socket.role = decoded.role;
 
+      console.log("✅ Socket Auth Success:", socket.userId, socket.role);
+
       next();
 
     } catch (error) {
-      console.log("Socket Auth Error:", error.message);
-      next(new Error("Socket auth failed"));
+
+      if (error.name === "TokenExpiredError") {
+        console.log("❌ Socket Token Expired");
+        return next(new Error("TOKEN_EXPIRED"));
+      }
+
+      console.log("❌ Socket Auth Error:", error.message);
+      next(new Error("AUTH_FAILED"));
     }
   });
 
@@ -56,43 +75,20 @@ export const initSocket = (server) => {
     */
     if (role === "buddy") {
 
-      // mark online
       await redis.hset("online_buddies", userId, "online");
 
-      /*
-      =============================
-      LIVE LOCATION UPDATE
-      =============================
-      */
       socket.on("update_location", async (data) => {
-
         try {
           const { lat, lng, bookingId } = data;
 
-          // save to redis geo
-          await redis.geoadd(
-            "buddy_locations",
-            lng,
-            lat,
-            userId
-          );
+          await redis.geoadd("buddy_locations", lng, lat, userId);
 
-          /*
-          =====================================
-          BROADCAST TO NEARBY USERS (DISCOVERY)
-          =====================================
-          */
           io.emit("buddy_live_location", {
             buddyId: userId,
             lat,
             lng
           });
 
-          /*
-          =====================================
-          TRACK ACTIVE BOOKING
-          =====================================
-          */
           if (bookingId) {
             io.to(`booking:${bookingId}`).emit(
               "booking_location_update",
@@ -108,17 +104,9 @@ export const initSocket = (server) => {
         } catch (err) {
           console.log("Location error:", err);
         }
-
       });
 
-
-      /*
-      =============================
-      ONLINE / OFFLINE STATUS
-      =============================
-      */
       socket.on("buddy:status", async (data) => {
-
         const { isOnline } = data;
 
         if (isOnline) {
@@ -131,21 +119,14 @@ export const initSocket = (server) => {
           buddyId: userId,
           isOnline
         });
-
       });
-
     }
 
-
     /*
-    ===================================================
-    USER TRACK NEARBY BUDDIES
-    ===================================================
+    USER TRACK NEARBY
     */
     socket.on("watch_nearby_buddies", async (data) => {
-
       try {
-
         const { lat, lng } = data;
 
         const buddies = await redis.georadius(
@@ -163,15 +144,8 @@ export const initSocket = (server) => {
       } catch (err) {
         console.log(err);
       }
-
     });
 
-
-    /*
-    ===================================================
-    TRACK BOOKING
-    ===================================================
-    */
     socket.on("track_booking", (bookingId) => {
       socket.join(`booking:${bookingId}`);
     });
@@ -180,21 +154,12 @@ export const initSocket = (server) => {
       socket.join(`booking:${bookingId}`);
     });
 
-
-    /*
-    ===================================================
-    USER WATCH BUDDY
-    ===================================================
-    */
     socket.on("watch_buddy", (buddyId) => {
       socket.join(`buddy:${buddyId}`);
     });
 
-
     /*
-    ===================================================
     DISCONNECT
-    ===================================================
     */
     socket.on("disconnect", async () => {
 

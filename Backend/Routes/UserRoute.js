@@ -21,7 +21,7 @@ userRouter.get("/categories", getCategories);
 userRouter.get("/skills/:categoryId", getSkills);
 userRouter.get("/interests", getInterests);
 
-userRouter.get("/nearest-buddy",getNearestBuddies)
+
 
 
 export default userRouter;

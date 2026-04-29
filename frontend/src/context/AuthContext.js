@@ -12,11 +12,11 @@ export const AuthProvider = ({ children }) => {
     loading: true,
   });
 
-  // Load session on app startup
+  // LOAD SESSION
   useEffect(() => {
     const loadStorageData = async () => {
       try {
-        const token = await SecureStore.getItemAsync("token");
+        const token = await SecureStore.getItemAsync("accessToken");
         const role = await SecureStore.getItemAsync("role");
         const user = await SecureStore.getItemAsync("user");
 
@@ -35,59 +35,56 @@ export const AuthProvider = ({ children }) => {
         setAuthState((prev) => ({ ...prev, loading: false }));
       }
     };
+
     loadStorageData();
   }, []);
 
-const login = async (userRole, resData) => {
-  try {
-    const token =
-      resData.accessToken ||
-      resData.token ||
-      resData?.data?.accessToken;
+  // LOGIN
+  const login = async (userRole, resData) => {
+    try {
+      const accessToken = resData.accessToken;
+      const refreshToken = resData.refreshToken;
 
-    const profile =
-      resData.buddy ||
-      resData.user ||
-      resData.data?.buddy ||
-      resData.data?.user;
+      const profile =
+        resData.user ||
+        resData.buddy ||
+        resData.data?.user ||
+        resData.data?.buddy;
 
-    // SAVE CORRECT KEYS
-    await SecureStore.setItemAsync("accessToken", token);
-    await SecureStore.setItemAsync("role", userRole);
-    await SecureStore.setItemAsync("user", JSON.stringify(profile));
+      // SAVE
+      await SecureStore.setItemAsync("accessToken", accessToken);
+      await SecureStore.setItemAsync("refreshToken", refreshToken);
+      await SecureStore.setItemAsync("role", userRole);
+      await SecureStore.setItemAsync("user", JSON.stringify(profile));
 
-    console.log("TOKEN SAVED:", token);
+      setAuthState({
+        token: accessToken,
+        role: userRole,
+        user: profile,
+        isLoggedIn: true,
+        loading: false,
+      });
+
+    } catch (e) {
+      console.error("LOGIN ERROR:", e);
+    }
+  };
+
+  // LOGOUT
+  const logout = async () => {
+    await SecureStore.deleteItemAsync("accessToken");
+    await SecureStore.deleteItemAsync("refreshToken");
+    await SecureStore.deleteItemAsync("role");
+    await SecureStore.deleteItemAsync("user");
 
     setAuthState({
-      token,
-      role: userRole,
-      user: profile,
-      isLoggedIn: true,
+      token: null,
+      isLoggedIn: false,
+      role: null,
+      user: null,
       loading: false,
     });
-
-  } catch (e) {
-    console.error("LOGIN ERROR:", e);
-  }
-};
-
-
-const logout = async () => {
-  const token = await SecureStore.getItemAsync("accessToken");
-  console.log("LOGOUT TOKEN:", token);
-
-  await SecureStore.deleteItemAsync("accessToken");
-  await SecureStore.deleteItemAsync("role");
-  await SecureStore.deleteItemAsync("user");
-
-  setAuthState({
-    token: null,
-    isLoggedIn: false,
-    role: null,
-    user: null,
-    loading: false,
-  });
-};
+  };
 
   return (
     <AuthContext.Provider value={{ ...authState, login, logout }}>

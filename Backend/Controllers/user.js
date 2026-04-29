@@ -101,8 +101,9 @@ export const getInterests = async (req, res) => {
   }
 };
 
-
+// nearbuddy
 export const getNearestBuddies = async (req, res) => {
+  console.log("in nearesth buddy !!")
   try {
     const { latitude, longitude, categoryId, skillIds, interestIds } = req.query;
 

@@ -14,7 +14,7 @@ import {
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext.js";
 
-const BASE_URL = "http://10.0.0.19:9090/api";
+const BASE_URL = "http://10.0.0.14:9090/api";
 
 export default function OTPScreen({ route }) {
   const { email, role, type, formData } = route?.params || {};

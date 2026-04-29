@@ -9,7 +9,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons"; // Ensure you have expo-vector-icons installed
+import { Ionicons } from "@expo/vector-icons";
 import api from "../../api/Apiclient.js";
 import { useAuth } from "../../context/AuthContext.js";
 
@@ -22,7 +22,6 @@ export default function ProfileScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
 
-  // Password Visibility States
   const [showOldPass, setShowOldPass] = useState(false);
   const [showNewPass, setShowNewPass] = useState(false);
 
@@ -30,7 +29,7 @@ export default function ProfileScreen({ navigation }) {
     name: "",
     phone: "",
     email: "",
-    address: "", // New Field
+    address: "",
   });
 
   const [password, setPassword] = useState({
@@ -46,14 +45,23 @@ export default function ProfileScreen({ navigation }) {
     try {
       setLoading(true);
       const res = await api.get("/user/user-profile");
+
       if (res.data.success) {
         const userData = res.data.user;
+
         setUser(userData);
+
+        const addressString = userData.address
+          ? `${userData.address.city || ""}, ${userData.address.state || ""} ${
+              userData.address.pincode || ""
+            }`
+          : "";
+
         setForm({
           name: userData.name || "",
           phone: userData.phone || "",
           email: userData.email || "",
-          address: userData.address || "", // New Field
+          address: addressString,
         });
       }
     } catch (err) {
@@ -70,10 +78,15 @@ export default function ProfileScreen({ navigation }) {
   const updateProfile = async () => {
     try {
       setUpdating(true);
-      const res = await api.put("/user/update-profile", {
+
+      const res = await api.put("/user/update-userprofile", {
         name: form.name,
         phone: form.phone,
-        address: form.address, // Sending address to backend
+        address: {
+          city: form.address,
+          state: "",
+          pincode: "",
+        },
       });
 
       if (res.data.success) {
@@ -92,9 +105,11 @@ export default function ProfileScreen({ navigation }) {
     if (!password.oldPassword || !password.newPassword) {
       return Alert.alert("Error", "Fill both password fields.");
     }
+
     try {
       setUpdating(true);
       const res = await api.put("/auth/change-password", password);
+
       if (res.data.success) {
         Alert.alert("Success", "Password changed!");
         setPasswordMode(false);
@@ -116,18 +131,24 @@ export default function ProfileScreen({ navigation }) {
   }
 
   return (
-    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView style={styles.container}>
+      {/* HEADER */}
       <View style={styles.header}>
-        <Text style={styles.title}>Account Settings</Text>
+        <View style={styles.avatar}>
+          <Ionicons name="person" size={28} color="#fff" />
+        </View>
+
+        <Text style={styles.title}>{form.name || "User"}</Text>
+
         <TouchableOpacity onPress={logout}>
-          <Text style={styles.logoutTxt}>Logout</Text>
+          <Ionicons name="log-out-outline" size={24} color="#ff4d4d" />
         </TouchableOpacity>
       </View>
 
+      {/* PROFILE */}
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Personal Details</Text>
+        <Text style={styles.sectionTitle}>Personal Information</Text>
 
-        {/* Name */}
         <Text style={styles.label}>Full Name</Text>
         <TextInput
           style={[styles.input, !editing && styles.disabledInput]}
@@ -136,8 +157,7 @@ export default function ProfileScreen({ navigation }) {
           onChangeText={(v) => setForm({ ...form, name: v })}
         />
 
-        {/* Phone */}
-        <Text style={styles.label}>Phone Number</Text>
+        <Text style={styles.label}>Phone</Text>
         <TextInput
           style={[styles.input, !editing && styles.disabledInput]}
           value={form.phone}
@@ -146,111 +166,245 @@ export default function ProfileScreen({ navigation }) {
           onChangeText={(v) => setForm({ ...form, phone: v })}
         />
 
-        {/* Address - Added Field */}
         <Text style={styles.label}>Address</Text>
         <TextInput
           style={[styles.input, !editing && styles.disabledInput]}
           value={form.address}
           editable={editing}
           multiline
+          placeholder="Enter city, state, pincode"
           onChangeText={(v) => setForm({ ...form, address: v })}
-          placeholder="Enter your home address"
         />
 
         {!editing ? (
-          <TouchableOpacity style={styles.editBtn} onPress={() => setEditing(true)}>
-            <Text style={styles.editBtnText}>Edit Profile</Text>
+          <TouchableOpacity
+            style={styles.primaryBtn}
+            onPress={() => setEditing(true)}
+          >
+            <Text style={styles.btnText}>Edit Profile</Text>
           </TouchableOpacity>
         ) : (
           <View style={styles.row}>
-            <TouchableOpacity style={[styles.halfBtn, styles.cancelBtn]} onPress={() => { setEditing(false); setForm(user); }}>
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={() => {
+                setEditing(false);
+                fetchProfile();
+              }}
+            >
               <Text style={styles.btnText}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.halfBtn} onPress={updateProfile}>
-              {updating ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Save</Text>}
+
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={updateProfile}
+            >
+              {updating ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.btnText}>Save</Text>
+              )}
             </TouchableOpacity>
           </View>
         )}
       </View>
 
-      {/* Password Change Section */}
-      <TouchableOpacity style={styles.passwordToggle} onPress={() => setPasswordMode(!passwordMode)}>
-        <Text style={styles.passwordToggleText}>
-          {passwordMode ? "Close Security Settings" : "Change Password"}
-        </Text>
+      {/* PASSWORD */}
+      <TouchableOpacity
+        style={styles.passwordToggle}
+        onPress={() => setPasswordMode(!passwordMode)}
+      >
+        <Text style={styles.passwordToggleText}>Change Password</Text>
       </TouchableOpacity>
 
       {passwordMode && (
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Update Password</Text>
-          
+          <Text style={styles.sectionTitle}>Security</Text>
+
           <Text style={styles.label}>Current Password</Text>
-          <View style={styles.passwordContainer}>
+          <View style={styles.passwordBox}>
             <TextInput
               secureTextEntry={!showOldPass}
               style={styles.passInput}
               value={password.oldPassword}
-              onChangeText={(v) => setPassword({ ...password, oldPassword: v })}
+              onChangeText={(v) =>
+                setPassword({ ...password, oldPassword: v })
+              }
             />
-            <TouchableOpacity onPress={() => setShowOldPass(!showOldPass)}>
-              <Ionicons name={showOldPass ? "eye-off" : "eye"} size={20} color="#666" />
+            <TouchableOpacity
+              onPress={() => setShowOldPass(!showOldPass)}
+            >
+              <Ionicons name={showOldPass ? "eye-off" : "eye"} size={20} />
             </TouchableOpacity>
           </View>
 
-          {/* Forgot Password Link inside Change Password UI */}
-          <TouchableOpacity 
-            style={styles.forgotBtn} 
-            onPress={() => navigation.navigate("ForgotPassword")} 
+          <TouchableOpacity
+            onPress={() => navigation.navigate("ForgotPassword")}
           >
-            <Text style={styles.forgotText}>Forgot current password?</Text>
+            <Text style={styles.forgot}>Forgot password?</Text>
           </TouchableOpacity>
 
           <Text style={styles.label}>New Password</Text>
-          <View style={styles.passwordContainer}>
+          <View style={styles.passwordBox}>
             <TextInput
               secureTextEntry={!showNewPass}
               style={styles.passInput}
               value={password.newPassword}
-              onChangeText={(v) => setPassword({ ...password, newPassword: v })}
+              onChangeText={(v) =>
+                setPassword({ ...password, newPassword: v })
+              }
             />
-            <TouchableOpacity onPress={() => setShowNewPass(!showNewPass)}>
-              <Ionicons name={showNewPass ? "eye-off" : "eye"} size={20} color="#666" />
+            <TouchableOpacity
+              onPress={() => setShowNewPass(!showNewPass)}
+            >
+              <Ionicons name={showNewPass ? "eye-off" : "eye"} size={20} />
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.savePassBtn} onPress={changePassword}>
-            {updating ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Update Password</Text>}
+          <TouchableOpacity
+            style={styles.darkBtn}
+            onPress={changePassword}
+          >
+            {updating ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.btnText}>Update Password</Text>
+            )}
           </TouchableOpacity>
         </View>
       )}
 
-      <View style={{ height: 50 }} />
+      <View style={{ height: 60 }} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8F9FA", padding: 20 },
-  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 40, marginBottom: 20 },
-  title: { fontSize: 26, fontWeight: "bold", color: "#212529" },
-  logoutTxt: { color: "#FF4D4D", fontWeight: "bold" },
-  card: { backgroundColor: "#fff", padding: 20, borderRadius: 15, elevation: 3, marginBottom: 20 },
-  sectionTitle: { fontSize: 18, fontWeight: "700", marginBottom: 10, color: "#495057" },
-  label: { fontSize: 12, color: "#ADB5BD", marginTop: 15, fontWeight: "700", textTransform: "uppercase" },
-  input: { borderBottomWidth: 1, borderBottomColor: "#DEE2E6", paddingVertical: 8, fontSize: 16, color: "#212529" },
-  disabledInput: { color: "#868E96" },
-  passwordContainer: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: "#DEE2E6" },
-  passInput: { flex: 1, paddingVertical: 8, fontSize: 16, color: "#212529" },
-  editBtn: { backgroundColor: "#4CAF50", padding: 15, borderRadius: 10, alignItems: "center", marginTop: 25 },
-  editBtnText: { color: "#fff", fontWeight: "bold" },
-  row: { flexDirection: "row", justifyContent: "space-between", marginTop: 25 },
-  halfBtn: { backgroundColor: "#4CAF50", width: "48%", padding: 15, borderRadius: 10, alignItems: "center" },
-  cancelBtn: { backgroundColor: "#6C757D" },
-  btnText: { color: "#fff", fontWeight: "bold" },
-  passwordToggle: { padding: 10, alignItems: "center", marginBottom: 10 },
-  passwordToggleText: { color: "#007AFF", fontWeight: "600" },
-  savePassBtn: { backgroundColor: "#212529", padding: 15, borderRadius: 10, alignItems: "center", marginTop: 25 },
-  forgotBtn: { alignSelf: 'flex-end', marginTop: 5 },
-  forgotText: { color: "#FF9800", fontSize: 13, fontWeight: "600" }
+  container: { flex: 1, backgroundColor: "#F5F6FA", padding: 20 },
+
+  loaderContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  header: {
+    alignItems: "center",
+    marginTop: 40,
+    marginBottom: 20,
+  },
+
+  avatar: {
+    backgroundColor: "#4CAF50",
+    height: 70,
+    width: 70,
+    borderRadius: 35,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+
+  title: {
+    fontSize: 22,
+    fontWeight: "bold",
+  },
+
+  card: {
+    backgroundColor: "#fff",
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 20,
+    elevation: 3,
+  },
+
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 10,
+  },
+
+  label: {
+    marginTop: 15,
+    fontSize: 12,
+    color: "#999",
+  },
+
+  input: {
+    backgroundColor: "#F7F7F7",
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 5,
+  },
+
+  disabledInput: {
+    color: "#777",
+  },
+
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 20,
+  },
+
+  primaryBtn: {
+    backgroundColor: "#4CAF50",
+    padding: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 20,
+    flex: 1,
+  },
+
+  secondaryBtn: {
+    backgroundColor: "#999",
+    padding: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 20,
+    flex: 1,
+    marginRight: 10,
+  },
+
+  darkBtn: {
+    backgroundColor: "#000",
+    padding: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 20,
+  },
+
+  btnText: {
+    color: "#fff",
+    fontWeight: "bold",
+  },
+
+  passwordToggle: {
+    alignItems: "center",
+    marginBottom: 10,
+  },
+
+  passwordToggleText: {
+    color: "#007AFF",
+    fontWeight: "600",
+  },
+
+  passwordBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F7F7F7",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    marginTop: 5,
+  },
+
+  passInput: {
+    flex: 1,
+    paddingVertical: 12,
+  },
+
+  forgot: {
+    alignSelf: "flex-end",
+    color: "#FF9800",
+    marginTop: 5,
+  },
 });

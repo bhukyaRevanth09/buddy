@@ -1,14 +1,20 @@
-import redis from "../Config/redis";
+import redis from "../Config/redis.js";
 
 export const lockBuddy = async (buddyId) => {
-  const lockKey = `buddy:${buddyId}:lock`;
+const lockKey = `buddy:${buddyId}:lock`;
 
-  const result = await redis.set(lockKey, "locked", "NX", "EX", 120);
-  
-  return result; // null = already locked
+const result = await redis.set(
+lockKey,
+"locked",
+"NX",
+"EX",
+120
+);
+
+return result; // null if locked
 };
 
 export const unlockBuddy = async (buddyId) => {
-  const lockKey = `buddy:${buddyId}:lock`;
-  await redis.del(lockKey);
+const lockKey = `buddy:${buddyId}:lock`;
+await redis.del(lockKey);
 };

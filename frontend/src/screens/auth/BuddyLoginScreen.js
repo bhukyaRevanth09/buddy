@@ -15,7 +15,7 @@ import axios from "axios";
 import { useAuth } from "../../context/AuthContext.js";
 
 // Ensure this IP is correct for your local machine
-const API_URL = "http://10.0.0.19:9090/api/buddy/buddy-login";
+const API_URL = "http://10.0.0.14:9090/api/buddy/buddy-login";
 
 export default function BuddyLoginScreen({ navigation }) {
   const { login } = useAuth();

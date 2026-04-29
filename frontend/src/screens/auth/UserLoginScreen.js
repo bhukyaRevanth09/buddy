@@ -14,10 +14,10 @@ import {
   Keyboard,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import axios from "axios";
 
-// Context & API
+// Context
 import { useAuth } from "../../context/AuthContext.js";
-import api from "../../api/Apiclient.js"; 
 
 export default function UserLoginScreen({ navigation }) {
   const { login } = useAuth();
@@ -52,36 +52,41 @@ export default function UserLoginScreen({ navigation }) {
     return Object.keys(newErrors).length === 0;
   };
 
-const handleLogin = async () => {
-  if (!validate()) return;
-  setLoading(true);
+  const handleLogin = async () => {
+    if (!validate()) return;
+    setLoading(true);
 
-  try {
-    const res = await api.post("/user/user-login", {
-      email: formData.email.trim().toLowerCase(),
-      password: formData.password,
-      role: "user",
-    });
+    try {
+      const res = await axios.post(
+        "http://10.0.0.14:9090/api/user/user-login",
+        {
+          email: formData.email.trim().toLowerCase(),
+          password: formData.password,
+          role: "user",
+        }
+      );
 
-    if (res?.data?.success) {
-      // THIS IS THE ONLY LINE YOU NEED.
-      // Once this runs, RootNavigation re-renders and swaps stacks.
-      await login("user", res.data); 
-    } else {
-      Alert.alert("Login Failed", res.data?.message || "Invalid credentials");
+      if (res?.data?.success) {
+        await login("user", res.data);
+      } else {
+        Alert.alert("Login Failed", res.data?.message || "Invalid credentials");
+      }
+    } catch (error) {
+      console.log("LOGIN ERROR:", error?.response?.data || error.message);
+
+      Alert.alert(
+        "Error",
+        error?.response?.data?.message || "Server error"
+      );
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    Alert.alert("Error", error.response?.data?.message || "Server error");
-  } finally {
-    // We only set loading false if the login failed. 
-    // If it succeeds, this component unmounts anyway.
-    setLoading(false); 
-  }
-};
+  };
+
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"} 
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.mainWrapper}
       >
         <ScrollView
@@ -106,19 +111,27 @@ const handleLogin = async () => {
               autoCapitalize="none"
               placeholderTextColor="#ADB5BD"
             />
-            {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
+            {errors.email && (
+              <Text style={styles.errorText}>{errors.email}</Text>
+            )}
           </View>
 
           {/* Password Field */}
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Password</Text>
-            <View style={styles.passwordWrapper}> 
+            <View style={styles.passwordWrapper}>
               <TextInput
                 placeholder="Enter password"
                 secureTextEntry={!showPassword}
                 value={formData.password}
-                onChangeText={(text) => handleInputChange("password", text)}
-                style={[styles.input, { flex: 1 }, errors.password && styles.errorInput]}
+                onChangeText={(text) =>
+                  handleInputChange("password", text)
+                }
+                style={[
+                  styles.input,
+                  { flex: 1 },
+                  errors.password && styles.errorInput,
+                ]}
                 autoCapitalize="none"
                 placeholderTextColor="#ADB5BD"
               />
@@ -126,14 +139,16 @@ const handleLogin = async () => {
                 style={styles.eyeBtn}
                 onPress={() => setShowPassword(!showPassword)}
               >
-                <Ionicons 
-                  name={showPassword ? "eye-off" : "eye"} 
-                  size={22} 
-                  color="#6C757D" 
+                <Ionicons
+                  name={showPassword ? "eye-off" : "eye"}
+                  size={22}
+                  color="#6C757D"
                 />
               </TouchableOpacity>
             </View>
-            {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
+            {errors.password && (
+              <Text style={styles.errorText}>{errors.password}</Text>
+            )}
           </View>
 
           {/* Login Button */}
@@ -149,18 +164,21 @@ const handleLogin = async () => {
             )}
           </TouchableOpacity>
 
-          {/* Footer Links */}
+          {/* Footer */}
           <View style={styles.footer}>
-            <TouchableOpacity onPress={() => navigation.navigate("ForgotPassword")}>
+            <TouchableOpacity
+              onPress={() => navigation.navigate("ForgotPassword")}
+            >
               <Text style={styles.linkText}>Forgot Password?</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.signupBox}
-              onPress={() => navigation.navigate("Home")} // Point this to your registration screen
+              onPress={() => navigation.navigate("Home")}
             >
               <Text style={styles.footerText}>
-                Don't have an account? <Text style={styles.boldLink}>Sign Up</Text>
+                Don't have an account?{" "}
+                <Text style={styles.boldLink}>Sign Up</Text>
               </Text>
             </TouchableOpacity>
           </View>
@@ -176,40 +194,85 @@ const styles = StyleSheet.create({
   header: { marginBottom: 35 },
   title: { fontSize: 30, fontWeight: "bold", color: "#212529" },
   subtitle: { fontSize: 16, color: "#6C757D", marginTop: 5 },
+
   fieldGroup: { marginBottom: 20 },
-  label: { fontSize: 14, fontWeight: "600", color: "#495057", marginBottom: 8 },
-  input: { 
-    height: 55, 
-    borderWidth: 1, 
-    borderColor: "#DEE2E6", 
-    borderRadius: 12, 
-    paddingHorizontal: 15, 
-    fontSize: 16, 
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#495057",
+    marginBottom: 8,
+  },
+
+  input: {
+    height: 55,
+    borderWidth: 1,
+    borderColor: "#DEE2E6",
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    fontSize: 16,
     backgroundColor: "#F8F9FA",
-    color: "#000"
+    color: "#000",
   },
-  passwordWrapper: { flexDirection: "row", alignItems: "center" },
-  eyeBtn: { position: "absolute", right: 15 },
+
+  passwordWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  eyeBtn: {
+    position: "absolute",
+    right: 15,
+  },
+
   errorInput: { borderColor: "#DC3545" },
-  errorText: { color: "#DC3545", fontSize: 12, marginTop: 5, fontWeight: "500" },
-  loginBtn: { 
-    backgroundColor: "#007AFF", 
-    height: 55, 
-    borderRadius: 12, 
-    justifyContent: "center", 
-    alignItems: "center", 
-    marginTop: 10,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 }
+
+  errorText: {
+    color: "#DC3545",
+    fontSize: 12,
+    marginTop: 5,
+    fontWeight: "500",
   },
-  btnDisabled: { backgroundColor: "#B0D4FF" },
-  btnText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
-  footer: { marginTop: 30, alignItems: "center" },
-  linkText: { color: "#007AFF", fontWeight: "600" },
-  signupBox: { marginTop: 20 },
-  footerText: { color: "#6C757D", fontSize: 14 },
-  boldLink: { color: "#007AFF", fontWeight: "bold" }
+
+  loginBtn: {
+    backgroundColor: "#007AFF",
+    height: 55,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 10,
+  },
+
+  btnDisabled: {
+    backgroundColor: "#B0D4FF",
+  },
+
+  btnText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+
+  footer: {
+    marginTop: 30,
+    alignItems: "center",
+  },
+
+  linkText: {
+    color: "#007AFF",
+    fontWeight: "600",
+  },
+
+  signupBox: {
+    marginTop: 20,
+  },
+
+  footerText: {
+    color: "#6C757D",
+    fontSize: 14,
+  },
+
+  boldLink: {
+    color: "#007AFF",
+    fontWeight: "bold",
+  },
 });

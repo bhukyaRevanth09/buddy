@@ -10,16 +10,18 @@ export const useLiveTracking = (socket, bookingId) => {
 
     socket.emit("join_booking_room", bookingId);
 
-    socket.on("location_update", (data) => {
-
+    const handleLocation = (data) => {
       setBuddyLocation({
         latitude: data.lat,
         longitude: data.lng
       });
+    };
 
-    });
+    socket.on("location_update", handleLocation);
 
-    return () => socket.off("location_update");
+    return () => {
+      socket.off("location_update", handleLocation);
+    };
 
   }, [socket, bookingId]);
 

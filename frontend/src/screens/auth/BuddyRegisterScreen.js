@@ -10,7 +10,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import * as Location from "expo-location";
 
-const BASE_URL = "http://10.0.0.19:9090/api";
+const BASE_URL = "http://10.0.0.14:9090/api";
 
 const GENDERS = ["Male", "Female", "Other"];
 

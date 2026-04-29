@@ -1,70 +1,129 @@
-import { Worker } from 'bullmq';
-import redis from '../Config/redis.js';
-import instantBookingModel from '../models/instantBooking.js';
-import { getIO } from '../services/Socket.js';
-import { bookingQueue } from '../Config/queueConfig.js';
+import { Worker } from "bullmq";
+import redis from "../Config/redis.js";
+import { getIO } from "../services/Socket.js";
+import { bookingQueue } from "../Config/queueConfig.js";
+import { lockBuddy,unlockBuddy } from "./bookingLock.js";
 
-const connection = { host: '127.0.0.1', port: 6379 };
-
-
+const connection = {
+host: "127.0.0.1",
+port: 6379
+};
 
 export const startBookingWorker = () => {
-  const worker = new Worker(
-    "bookingQueue",
-    async (job) => {
-      if (job.name !== "check-acceptance") return;
 
-      const { bookingId } = job.data;
+const worker = new Worker(
+"bookingQueue",
+async (job) => {
 
-      // 🔥 get from redis (NOT Mongo)
-      const raw = await redis.get(`pending_booking:${bookingId}`);
-      if (!raw) return;
+if (job.name !== "check-acceptance") return;
 
-      const state = JSON.parse(raw);
+const { bookingId } = job.data;
 
-      const nextIndex = state.currentIndex + 1;
+const raw =
+await redis.get(`pending_booking:${bookingId}`);
 
-      // more buddies available
-      if (nextIndex < state.buddies.length) {
-        state.currentIndex = nextIndex;
+if (!raw) return;
 
-        const nextBuddyId = state.buddies[nextIndex];
+const state = JSON.parse(raw);
 
-        await redis.set(
-          `pending_booking:${bookingId}`,
-          JSON.stringify(state),
-          "EX",
-          3600
-        );
+/*
+UNLOCK PREVIOUS
+*/
 
-        // notify next buddy
-        getIO().to(nextBuddyId).emit("new-booking-request", {
-          bookingId,
-          customerName: state.customerName,
-          categoryName: state.categoryName,
-          skills: state.skillNames,
-        });
+const prevBuddy =
+state.buddies[state.currentIndex];
 
-        await bookingQueue.add(
-          "check-acceptance",
-          { bookingId },
-          { delay: 25000 }
-        );
-      } else {
-        // no buddies left
-        getIO()
-          .to(state.user.toString())
-          .emit("booking-failed", {
-            message: "No buddies responded",
-          });
+await unlockBuddy(prevBuddy);
 
-        await redis.del(`pending_booking:${bookingId}`);
-      }
-    },
-    { connection }
-  );
+const nextIndex =
+state.currentIndex + 1;
 
-  worker.on("failed", (job, err) =>
-    console.log(`Job ${job.id} failed: ${err.message}`)
-  );
+/*
+NO MORE BUDDIES
+*/
+
+if (nextIndex >= state.buddies.length) {
+
+getIO()
+.to(state.user.toString())
+.emit("booking-failed");
+
+await redis.del(
+`pending_booking:${bookingId}`
+);
+
+return;
+}
+
+/*
+TRY NEXT
+*/
+
+const nextBuddyId =
+state.buddies[nextIndex];
+
+const locked =
+await lockBuddy(nextBuddyId);
+
+/*
+IF LOCKED TRY NEXT
+*/
+
+if (!locked) {
+
+state.currentIndex = nextIndex;
+
+await redis.set(
+`pending_booking:${bookingId}`,
+JSON.stringify(state),
+"EX",
+3600
+);
+
+await bookingQueue.add(
+"check-acceptance",
+{ bookingId },
+{ delay: 0 }
+);
+
+return;
+}
+
+/*
+SEND REQUEST
+*/
+
+state.currentIndex = nextIndex;
+
+await redis.set(
+`pending_booking:${bookingId}`,
+JSON.stringify(state),
+"EX",
+3600
+);
+
+getIO()
+.to(nextBuddyId)
+.emit("new-booking-request", {
+bookingId
+});
+
+/*
+QUEUE AGAIN
+*/
+
+await bookingQueue.add(
+"check-acceptance",
+{ bookingId },
+{ delay: 20000 }
+);
+
+},
+{ connection }
+);
+
+worker.on("failed", (job, err) =>
+console.log("Worker failed:", err)
+);
+
 };

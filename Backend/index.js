@@ -23,7 +23,7 @@ app.set("io", io);
 // connect DB
 connectDB();
 
-const port = process.env.PORT_NO || 3000;
-server.listen(port, () => {
+const port = process.env.PORT_NO;
+server.listen(port,"0.0.0.0",() => {
   console.log(`server running on port ${port}`);
 });

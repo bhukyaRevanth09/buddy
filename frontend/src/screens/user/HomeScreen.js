@@ -1,58 +1,107 @@
-import React, { useState, useEffect, useCallback, useContext } from "react";
+import React, { useEffect, useState, useContext, useRef } from "react";
 import {
-View, Text, TouchableOpacity, FlatList,
-StyleSheet, Image, ScrollView, ActivityIndicator,
-Alert, StatusBar
+View,
+Text,
+TouchableOpacity,
+StyleSheet,
+ScrollView,
+ActivityIndicator,
+Dimensions
 } from "react-native";
 
-import * as Location from 'expo-location';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
-import MapView,{ PROVIDER_GOOGLE } from "react-native-maps";
+import MapView, { Marker } from "react-native-maps";
+import { MaterialIcons } from "@expo/vector-icons";
+import { SafeAreaView } from "react-native-safe-area-context";
+import * as Location from "expo-location";
 
 import api from "../../api/Apiclient";
 import { SocketContext } from "../../context/socketContext.js";
+import { LocationContext } from "../../context/LocationContext";
 
-import UserMarker from "../../components/map/UserMaker.js";
-import BuddyMarker from "../../components/map/BuddyMaker.js";
+const { height } = Dimensions.get("window");
 
 export default function HomeScreen({ navigation }) {
 
+const mapRef = useRef(null);
 const { socket } = useContext(SocketContext);
 
-const [buddies,setBuddies] = useState([]);
-const [categories,setCategories] = useState([]);
-const [availableSkills,setAvailableSkills] = useState([]);
-const [availableInterests,setAvailableInterests] = useState([]);
+const {
+currentLocation: userLocation,
+selectedLocation
+} = useContext(LocationContext);
 
-const [selectedCategory,setSelectedCategory] = useState(null);
-const [selectedSkills,setSelectedSkills] = useState([]);
-const [selectedInterests,setSelectedInterests] = useState([]);
+const [locationName, setLocationName] = useState("");
 
-const [userLocation,setUserLocation] = useState(null);
-const [loading,setLoading] = useState(true);
-const [refreshing,setRefreshing] = useState(false);
+const [categories, setCategories] = useState([]);
+const [availableSkills, setAvailableSkills] = useState([]);
+const [availableInterests, setAvailableInterests] = useState([]);
 
+const [selectedCategory, setSelectedCategory] = useState(null);
+const [selectedSkills, setSelectedSkills] = useState([]);
+const [selectedInterests, setSelectedInterests] = useState([]);
+
+const [loading, setLoading] = useState(true);
+const [bookingLoading,setBookingLoading] = useState(false);
 
 
 /*
-==============================
-INIT
-==============================
+===========================
+GET FULL ADDRESS
+===========================
 */
-useEffect(()=>{
-const init = async()=>{
-try{
+useEffect(() => {
 
-let {status} =
-await Location.requestForegroundPermissionsAsync();
+const loc = selectedLocation || userLocation;
+if (!loc) return;
 
-if(status==="granted"){
-const loc = await Location.getCurrentPositionAsync({});
-setUserLocation(loc.coords);
+(async () => {
+
+try {
+
+const res = await Location.reverseGeocodeAsync(loc);
+
+if (res.length > 0) {
+
+const place = res[0];
+
+const fullAddress = [
+place.name,
+place.streetNumber,
+place.street,
+place.district,
+place.subregion,
+place.city,
+place.region,
+place.postalCode
+]
+.filter(Boolean)
+.join(", ");
+
+setLocationName(fullAddress);
+
 }
 
-const [catRes,intRes] = await Promise.all([
+} catch (e) {
+console.log("Reverse geocode error", e);
+}
+
+})();
+
+}, [selectedLocation, userLocation]);
+
+
+/*
+===========================
+LOAD INITIAL DATA
+===========================
+*/
+useEffect(() => {
+
+(async () => {
+
+try {
+
+const [catRes, intRes] = await Promise.all([
 api.get("/user/categories"),
 api.get("/user/interests")
 ]);
@@ -60,230 +109,288 @@ api.get("/user/interests")
 setCategories(catRes.data.data || []);
 setAvailableInterests(intRes.data.data || []);
 
-}catch(e){}
+} catch (err) {
+console.log("Init Data Error:", err);
+}
 
 setLoading(false);
-};
 
-init();
-},[]);
+})();
 
+}, []);
 
 
 /*
-==============================
-LOAD SKILLS
-==============================
+===========================
+MAP ANIMATE
+===========================
 */
-useEffect(()=>{
+useEffect(() => {
 
-if(!selectedCategory?._id){
+if (selectedLocation) {
+
+mapRef.current?.animateToRegion(
+{
+...selectedLocation,
+latitudeDelta: 0.05,
+longitudeDelta: 0.05
+},
+800
+);
+
+}
+
+}, [selectedLocation]);
+
+
+useEffect(() => {
+
+if (!selectedLocation && userLocation) {
+
+mapRef.current?.animateToRegion(
+{
+...userLocation,
+latitudeDelta:0.05,
+longitudeDelta:0.05
+},
+800
+);
+
+}
+
+}, [userLocation]);
+
+
+/*
+===========================
+LOAD SKILLS
+===========================
+*/
+useEffect(() => {
+
+if (!selectedCategory?._id) {
 setAvailableSkills([]);
 setSelectedSkills([]);
 return;
 }
 
-api.get(`/user/skills/${selectedCategory._id}`)
-.then(res=>{
-setAvailableSkills(res.data.data || []);
-})
-.catch(()=>setAvailableSkills([]));
+api
+.get(`/user/skills/${selectedCategory._id}`)
+.then(res => setAvailableSkills(res.data.data || []));
 
-},[selectedCategory]);
-
+}, [selectedCategory]);
 
 
 /*
-==============================
-REALTIME STATUS
-==============================
+===========================
+HELPERS
+===========================
 */
-useEffect(()=>{
+const toggleSelection = (id, list, setList) => {
 
-if(!socket) return;
-
-socket.on("buddy_status_updated",(data)=>{
-
-if(!data.isOnline){
-setBuddies(prev =>
-prev.filter(b=>b._id!==data.buddyId)
-);
-}else{
-fetchNearestBuddies();
-}
-
-});
-
-return ()=>socket.off("buddy_status_updated");
-
-},[socket]);
-
-
-
-/*
-==============================
-FETCH BUDDIES
-==============================
-*/
-const fetchNearestBuddies = useCallback(async()=>{
-
-if(!userLocation) return;
-
-setRefreshing(true);
-
-try{
-
-const res = await api.get(
-"/user/nearest-buddy",
-{
-params:{
-latitude:userLocation.latitude,
-longitude:userLocation.longitude,
-categoryId:selectedCategory?._id,
-skillIds:selectedSkills.join(","),
-interestIds:selectedInterests.join(",")
-}
-});
-
-setBuddies(res.data.data || []);
-
-}catch(e){}
-
-setRefreshing(false);
-
-},[
-userLocation,
-selectedCategory,
-selectedSkills,
-selectedInterests
-]);
-
-useEffect(()=>{
-fetchNearestBuddies();
-},[fetchNearestBuddies]);
-
-
-
-/*
-==============================
-TOGGLE
-==============================
-*/
-const toggleSelection=(id,list,setList)=>{
-
-if(list.includes(id)){
-setList(list.filter(i=>i!==id));
-}else{
-setList([...list,id]);
+if (list.includes(id)) {
+setList(list.filter(i => i !== id));
+} else {
+setList([...list, id]);
 }
 
 };
 
+const recenterMap = () => {
+
+if (userLocation) {
+
+mapRef.current?.animateToRegion(
+{
+...userLocation,
+latitudeDelta:0.05,
+longitudeDelta:0.05
+},
+800
+);
+
+}
+
+};
+
+const isFindDisabled =
+!selectedCategory || selectedSkills.length === 0;
 
 
 /*
-==============================
-MATCH
-==============================
+===========================
+BOOKING
+===========================
 */
-const handleStartMatching = async()=>{
+const handleFindBuddy = async () => {
 
-if(!selectedCategory)
-return Alert.alert("Select category");
+if (isFindDisabled) return;
 
-try{
+const locationToUse =
+selectedLocation || userLocation;
+
+try {
+
+setBookingLoading(true);
 
 const res = await api.post(
 "/booking/request",
 {
-category:selectedCategory._id,
-skills:selectedSkills,
-interests:selectedInterests,
-lat:userLocation.latitude,
-lng:userLocation.longitude
+category: selectedCategory?._id,
+skills: selectedSkills,
+interests: selectedInterests,
+lat: locationToUse.latitude,
+lng: locationToUse.longitude,
+price: 0
 }
 );
 
-navigation.navigate("Matching",{
-bookingId:res.data.bookingId,
-userLocation
+/*
+NO BUDDIES
+*/
+if (!res.data.success) {
+alert(res.data.message || "No buddies available");
+setBookingLoading(false);
+return;
+}
+
+/*
+NAVIGATE AFTER API
+*/
+navigation.navigate("Matching", {
+bookingId: res.data.bookingId,
+location: locationToUse
 });
 
-}catch(e){
-Alert.alert("No buddies available");
+} catch (err) {
+
+console.log("Booking error:", err);
+alert("No buddies available");
+
 }
+
+setBookingLoading(false);
 
 };
 
 
+if (loading || !userLocation) {
 
-if(loading)
-return(
+return (
 <View style={styles.center}>
-<ActivityIndicator size="large"/>
+<ActivityIndicator size="large" color="#4CAF50" />
 </View>
 );
 
+}
 
 
-return(
+return (
+
 <SafeAreaView style={styles.container}>
-<StatusBar barStyle="dark-content"/>
 
+{/* MAP */}
 <MapView
-provider={PROVIDER_GOOGLE}
+ref={mapRef}
 style={styles.map}
 showsUserLocation
-region={{
-latitude:userLocation?.latitude || 17.385,
-longitude:userLocation?.longitude || 78.4867,
+initialRegion={{
+latitude:
+selectedLocation?.latitude ||
+userLocation.latitude,
+longitude:
+selectedLocation?.longitude ||
+userLocation.longitude,
 latitudeDelta:0.05,
 longitudeDelta:0.05
 }}
 >
 
-<UserMarker location={userLocation}/>
-
-{buddies.map(buddy=>(
-<BuddyMarker
-key={buddy._id}
-buddy={buddy}
+{selectedLocation && (
+<Marker
+coordinate={selectedLocation}
+pinColor="red"
 />
-))}
+)}
 
 </MapView>
 
 
+{/* LOCATION BUTTON */}
+<TouchableOpacity
+style={styles.selectLocationBtn}
+onPress={() =>
+navigation.navigate("SelectLocation")
+}
+>
 
+<MaterialIcons
+name="location-on"
+size={20}
+color="#4CAF50"
+/>
+
+<View style={{ marginLeft: 10 }}>
+
+<Text style={styles.selectLabel}>
+{selectedLocation
+? "Selected Location"
+: "Current Location"}
+</Text>
+
+<Text
+style={styles.selectText}
+numberOfLines={2}
+>
+{locationName || "Loading address..."}
+</Text>
+
+</View>
+</TouchableOpacity>
+
+
+{/* RECENTER */}
+<TouchableOpacity
+style={styles.recenterBtn}
+onPress={recenterMap}
+>
+<MaterialIcons
+name="my-location"
+size={24}
+color="#007AFF"
+/>
+</TouchableOpacity>
+
+
+{/* FILTER PANEL */}
 <View style={styles.panel}>
-
-<FlatList
-data={buddies}
-keyExtractor={item=>item._id}
-nestedScrollEnabled
-showsVerticalScrollIndicator={false}
-refreshing={refreshing}
-onRefresh={fetchNearestBuddies}
-
-ListHeaderComponent={
-
-<View>
-
-<Text style={styles.title}>Discovery</Text>
+<ScrollView>
 
 <Text style={styles.label}>Category</Text>
 
-<ScrollView horizontal showsHorizontalScrollIndicator={false}>
-{categories.map(c=>(
+<ScrollView horizontal>
+{categories.map(c => (
 <TouchableOpacity
 key={c._id}
-onPress={()=>setSelectedCategory(c)}
+onPress={() =>
+setSelectedCategory(c)
+}
 style={[
 styles.chip,
-selectedCategory?._id===c._id && styles.activeChip
+selectedCategory?._id === c._id &&
+styles.activeChip
 ]}
 >
-<Text style={styles.chipText}>{c.name}</Text>
+<Text
+style={{
+color:
+selectedCategory?._id === c._id
+? "#fff"
+: "#333"
+}}
+>
+{c.name}
+</Text>
 </TouchableOpacity>
 ))}
 </ScrollView>
@@ -291,167 +398,191 @@ selectedCategory?._id===c._id && styles.activeChip
 
 <Text style={styles.label}>Skills</Text>
 
-<ScrollView horizontal showsHorizontalScrollIndicator={false}>
-{availableSkills.map(s=>(
+<ScrollView horizontal>
+{availableSkills.map(s => (
 <TouchableOpacity
 key={s._id}
-onPress={()=>toggleSelection(
+onPress={() =>
+toggleSelection(
 s._id,
 selectedSkills,
 setSelectedSkills
-)}
+)
+}
 style={[
 styles.chip,
-selectedSkills.includes(s._id)
-&& styles.activeChip
+selectedSkills.includes(s._id) &&
+styles.activeChip
 ]}
 >
-<Text style={styles.chipText}>{s.name}</Text>
+<Text
+style={{
+color:
+selectedSkills.includes(s._id)
+? "#fff"
+: "#333"
+}}
+>
+{s.name}
+</Text>
 </TouchableOpacity>
 ))}
 </ScrollView>
 
 
-<Text style={styles.label}>Interests</Text>
+<Text style={styles.label}>
+Interests (optional)
+</Text>
 
-<ScrollView horizontal showsHorizontalScrollIndicator={false}>
-{availableInterests.map(i=>(
+<ScrollView horizontal>
+{availableInterests.map(i => (
 <TouchableOpacity
 key={i._id}
-onPress={()=>toggleSelection(
+onPress={() =>
+toggleSelection(
 i._id,
 selectedInterests,
 setSelectedInterests
-)}
+)
+}
 style={[
 styles.chip,
-selectedInterests.includes(i._id)
-&& styles.activeChip
+selectedInterests.includes(i._id) &&
+styles.activeChip
 ]}
 >
-<Text style={styles.chipText}>{i.name}</Text>
+<Text
+style={{
+color:
+selectedInterests.includes(i._id)
+? "#fff"
+: "#333"
+}}
+>
+{i.name}
+</Text>
 </TouchableOpacity>
 ))}
 </ScrollView>
 
 
 <TouchableOpacity
-disabled={!selectedCategory}
+disabled={
+isFindDisabled || bookingLoading
+}
 style={[
 styles.findBtn,
-!selectedCategory && styles.disabledBtn
+(isFindDisabled || bookingLoading)
+&& styles.disabledBtn
 ]}
-onPress={handleStartMatching}
+onPress={handleFindBuddy}
 >
-<Text style={styles.findText}>
-FIND BEST BUDDY
+
+{bookingLoading ? (
+<ActivityIndicator color="#fff"/>
+) : (
+<Text
+style={{
+color:"#fff",
+fontWeight:"700"
+}}
+>
+Confirm Booking
 </Text>
+)}
+
 </TouchableOpacity>
 
-<Text style={styles.nearby}>
-Nearby Buddies
-</Text>
-
-</View>
-}
-
-renderItem={({item})=>(
-
-<View style={styles.card}>
-
-<Image
-source={{
-uri:item.profilePicture ||
-"https://i.pravatar.cc/100"
-}}
-style={styles.avatar}
-/>
-
-<View>
-<Text style={styles.name}>{item.name}</Text>
-<Text style={styles.price}>₹{item.pricePerHour}/hr</Text>
-<Text style={styles.online}>🟢 Online</Text>
-</View>
-
-</View>
-
-)}
-/>
-
+</ScrollView>
 </View>
 
 </SafeAreaView>
 );
 }
 
+
 const styles = StyleSheet.create({
 
-container:{flex:1},
+container:{flex:1,backgroundColor:"#fff"},
 map:{flex:1},
 
-panel:{
+selectLocationBtn:{
 position:"absolute",
-bottom:0,
-left:0,
-right:0,
-height:"65%",
+top:50,
+left:20,
+right:20,
 backgroundColor:"#fff",
-padding:15,
-borderTopLeftRadius:20,
-borderTopRightRadius:20
-},
-
-title:{fontSize:18,fontWeight:"700"},
-label:{marginTop:10,fontWeight:"600"},
-
-chip:{
-padding:8,
-backgroundColor:"#eee",
-borderRadius:20,
-marginRight:8,
-marginTop:8
-},
-
-activeChip:{backgroundColor:"#007AFF"},
-chipText:{color:"#000"},
-
-findBtn:{
-backgroundColor:"#000",
-padding:15,
-borderRadius:12,
-marginTop:10,
+flexDirection:"row",
+padding:14,
+borderRadius:15,
+elevation:5,
 alignItems:"center"
 },
 
-disabledBtn:{backgroundColor:"#ccc"},
-
-findText:{
-color:"#fff",
-fontWeight:"700"
+selectLabel:{
+fontSize:11,
+color:"#999"
 },
 
-nearby:{
-marginTop:10,
-fontWeight:"700"
+selectText:{
+fontSize:13,
+fontWeight:"600",
+color:"#000",
+width:260,
+lineHeight:18
 },
 
-card:{
-flexDirection:"row",
-padding:10,
-borderBottomWidth:1,
-borderColor:"#eee"
+recenterBtn:{
+position:"absolute",
+bottom:height*0.46,
+right:20,
+backgroundColor:"#fff",
+padding:12,
+borderRadius:30,
+elevation:5
 },
 
-avatar:{
-width:50,
-height:50,
-borderRadius:10,
-marginRight:10
+panel:{
+position:"absolute",
+bottom:90,
+left:10,
+right:10,
+backgroundColor:"#fff",
+padding:15,
+borderRadius:25,
+maxHeight:height*0.38,
+elevation:20
 },
 
-name:{fontWeight:"700"},
-price:{color:"#34C759"},
-online:{fontSize:12,color:"#34C759"},
+label:{
+fontWeight:"700",
+marginTop:12,
+marginBottom:5
+},
+
+chip:{
+paddingHorizontal:15,
+paddingVertical:8,
+backgroundColor:"#f0f0f0",
+borderRadius:20,
+margin:5
+},
+
+activeChip:{
+backgroundColor:"#4CAF50"
+},
+
+findBtn:{
+backgroundColor:"#000",
+padding:16,
+borderRadius:15,
+marginTop:20,
+alignItems:"center"
+},
+
+disabledBtn:{
+backgroundColor:"#ccc"
+},
 
 center:{
 flex:1,

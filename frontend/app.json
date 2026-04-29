@@ -1,32 +1,47 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "BuddyApp",
+    "slug": "buddy-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.yourname.buddyapp",
       "config": {
-        "googleMapsApiKey": "AIzaSyC48hD6vMw6Sh9E7WSkxR-di3mrgdKNe3"
+        "googleMapsApiKey": "AIzaSyBBpz9mtvFZbogdiF52M87-ogsLLKf7zAk"
       }
     },
     "android": {
+      "package": "com.yourname.buddyapp",
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "FOREGROUND_SERVICE",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ],
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyC48hD6vMw6Sh9E7WSkxR-di3mrgdKNe3"
+          "apiKey": "AIzaSyBBpz9mtvFZbogdiF52M87-ogsLLKf7zAk"
         }
-      },
-      "package": "com.anonymous.frontend"
+      }
     },
     "plugins": [
-      "expo-secure-store"
-    ]
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysPermission": "Allow Buddy App to track your location to connect you with nearby help."
+        }
+      ],
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "822bd845-f3ec-481e-94b1-5d881baaa423"
+      }
+    },
+    "owner": "revanth_009"
   }
 }

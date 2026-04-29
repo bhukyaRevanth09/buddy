@@ -8,255 +8,195 @@ import skillModel from "../models/SkillStore.js";
 import interestModel from "../models/Inerest.js";
 import { getIO } from "../services/Socket.js";
 import { bookingQueue } from "../Config/queueConfig.js";
-
-
+import { lockBuddy } from "../utils/bookingLock.js";
 
 
 export const autoAssignBuddy = async (req, res) => {
-  try {
-    const { category, skills, lat, lng, price } = req.body;
+console.log(req.body)
+try {
 
-    const io = getIO();
+const { category, skills, lat, lng, price } = req.body;
 
-    const longitude = parseFloat(lng);
-    const latitude = parseFloat(lat);
+const io = getIO();
 
-    /*
-    =========================
-    FIND NEARBY BUDDIES
-    =========================
-    */
+const longitude = parseFloat(lng);
+const latitude = parseFloat(lat);
 
-    const buddies = await buddyModel.aggregate([
-      {
-        $geoNear: {
-          near: { type: "Point", coordinates: [longitude, latitude] },
-          distanceField: "distance",
-          maxDistance: 10000,
-          spherical: true,
-          key: "geoLocation",
-          query: {
-            availabilityStatus: "available",
-            accountStatus: "active",
-            category: category.toString(),
-          },
-        },
-      },
-      { $limit: 5 },
-    ]);
+const categoryId =
+new mongoose.Types.ObjectId(category);
 
-    if (!buddies.length) {
-      return res.status(404).json({
-        success: false,
-        message: "No buddies nearby",
-      });
-    }
+/*
+=========================
+FIND NEARBY BUDDIES
+=========================
+*/
 
-    /*
-    =========================
-    CREATE TEMP BOOKING
-    =========================
-    */
+const buddies = await buddyModel.aggregate([
+{
+$geoNear: {
+near: {
+type: "Point",
+coordinates: [longitude, latitude]
+},
+distanceField: "distance",
+maxDistance: 10000,
+spherical: true,
+key: "geoLocation",
+query: {
+availabilityStatus: "available",
+accountStatus: "active",
+category: categoryId
+}
+}
+},
+{ $limit: 5 }
+]);
 
-    const tempBookingId = `temp_bk_${uuidv4()}`;
+if (!buddies.length) {
+return res.json({
+success:false,
+message:"No buddies nearby"
+});
+}
 
-    const bookingState = {
-      id: tempBookingId,
-      user: req.userId,
-      category,
-      requestedSkills: skills,
-      pricing: { totalAmount: price || 0 },
-      location: {
-        type: "Point",
-        coordinates: [longitude, latitude],
-      },
-      buddies: buddies.map((b) => b._id.toString()),
-      currentIndex: 0,
-      status: "searching",
-      createdAt: Date.now(),
-    };
+/*
+=========================
+CREATE TEMP BOOKING
+=========================
+*/
 
-    await redis.set(
-      `pending_booking:${tempBookingId}`,
-      JSON.stringify(bookingState),
-      "EX",
-      60 * 10
-    );
+const tempBookingId = `temp_bk_${uuidv4()}`;
 
-    /*
-    =========================
-    NOTIFY USER SEARCHING
-    =========================
-    */
+const bookingState = {
+id: tempBookingId,
+user: req.userId,
+category,
+requestedSkills: skills,
+pricing: { totalAmount: price || 0 },
+location:{
+type:"Point",
+coordinates:[longitude, latitude]
+},
+buddies: buddies.map(b=>b._id.toString()),
+currentIndex:0,
+status:"searching",
+createdAt: Date.now()
+};
 
-    io.to(req.userId.toString()).emit("booking-searching", {
-      bookingId: tempBookingId,
-      message: "Searching for nearby buddies"
-    });
+await redis.set(
+`pending_booking:${tempBookingId}`,
+JSON.stringify(bookingState),
+"EX",
+60*10
+);
 
-    /*
-    =========================
-    NOTIFY FIRST BUDDY
-    =========================
-    */
+/*
+=========================
+SEND FIRST BUDDY
+=========================
+*/
 
-    const firstBuddy = buddies[0];
+const firstBuddy = buddies[0]._id.toString();
 
-    io.to(firstBuddy._id.toString()).emit(
-      "new-booking-request",
-      {
-        bookingId: tempBookingId,
-        userId: req.userId,
-        category,
-        price,
-        distance:
-          (firstBuddy.distance / 1000).toFixed(1),
-      }
-    );
+// LOCK BUDDY
+const locked = await lockBuddy(firstBuddy);
 
-    /*
-    =========================
-    START TIMEOUT WORKER
-    =========================
-    */
+if (!locked) {
+return res.json({
+success:false,
+message:"All buddies busy"
+});
+}
 
-    await bookingQueue.add(
-      "booking-timeout",
-      { bookingId: tempBookingId },
-      { delay: 20000 }
-    );
+io.to(req.userId.toString()).emit(
+"booking-searching",
+{ bookingId: tempBookingId }
+);
 
-    /*
-    =========================
-    RESPONSE
-    =========================
-    */
+io.to(firstBuddy).emit(
+"new-booking-request",
+{
+bookingId: tempBookingId,
+userId: req.userId,
+category,
+price,
+distance:(buddies[0].distance/1000).toFixed(1)
+}
+);
 
-    res.json({
-      success: true,
-      bookingId: tempBookingId,
-    });
+/*
+=========================
+QUEUE NEXT
+=========================
+*/
 
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: err.message,
-    });
-  }
+await bookingQueue.add(
+"check-acceptance",
+{ bookingId: tempBookingId },
+{ delay: 20000 }
+);
+
+res.json({
+success:true,
+bookingId: tempBookingId
+});
+
+} catch (err) {
+
+console.log("Auto assign error", err);
+
+res.status(500).json({
+success:false,
+message: err.message
+});
+
+}
 };
 // --- PART 2: BUDDY ACCEPTS THE REQUEST ---
+
 export const acceptBooking = async (req, res) => {
-  try {
-    const { bookingId } = req.body; // tempId
-    const buddyId = req.userId;
 
-    const io = getIO();
+  const { bookingId } = req.body;
+  const buddyId = req.userId;
 
-    // get pending booking
-    const rawData = await redis.get(`pending_booking:${bookingId}`);
+  const raw =
+    await redis.get(`pending_booking:${bookingId}`);
 
-    if (!rawData)
-      return res.status(410).json({
-        success: false,
-        message: "Request expired"
-      });
+  if (!raw)
+    return res.json({ success: false });
 
-    const data = JSON.parse(rawData);
+  const state = JSON.parse(raw);
 
-    /*
-    =========================
-    CREATE FINAL BOOKING
-    =========================
-    */
+  await redis.del(
+    `pending_booking:${bookingId}`
+  );
 
-    const finalBooking = await instantBookingModel.create({
-      user: data.user,
-      buddy: buddyId,
-      category: data.category,
-      pricing: data.pricing,
-      location: data.location,
-      status: "accepted",
-      acceptedAt: new Date()
-    });
-
-    /*
-    =========================
-    SET BUDDY BUSY
-    =========================
-    */
-
-    const buddy = await buddyModel
-      .findByIdAndUpdate(
-        buddyId,
-        { availabilityStatus: "busy" },
-        { returnDocument: "after" }
-      )
-      .select("name phone rating");
-
-    /*
-    =========================
-    JOIN TRACKING ROOM
-    =========================
-    */
-
-    // user join
-    io.to(data.user.toString()).emit("booking-accepted", {
-      bookingId: finalBooking._id,
+  /*
+  ===============================
+  NOTIFY USER - ACCEPTED
+  ===============================
+  */
+  getIO()
+    .to(state.user.toString())
+    .emit("booking-accepted", {
+      bookingId,
       buddy: {
-        _id: buddy._id,
-        name: buddy.name,
-        phone: buddy.phone,
-        rating: buddy.rating?.average || 5
+        _id: buddyId
       }
     });
 
-    /*
-    =========================
-    NOTIFY BUDDY ACCEPTED
-    =========================
-    */
-
-    io.to(buddyId.toString()).emit("booking-confirmed", {
-      bookingId: finalBooking._id,
-      userId: data.user
+  /*
+  ===============================
+  AUTO JOIN BOOKING ROOM
+  ===============================
+  */
+  getIO()
+    .to(state.user.toString())
+    .emit("start_tracking", {
+      bookingId
     });
 
-    /*
-    =========================
-    BROADCAST TRACKING START
-    =========================
-    */
-
-    io.to(`booking:${finalBooking._id}`).emit("booking-started", {
-      bookingId: finalBooking._id,
-      status: "accepted"
-    });
-
-    /*
-    =========================
-    CLEANUP
-    =========================
-    */
-
-    await redis.del(`pending_booking:${bookingId}`);
-
-    /*
-    =========================
-    RESPONSE
-    =========================
-    */
-
-    res.status(200).json({
-      success: true,
-      data: finalBooking
-    });
-
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
+  res.json({ success: true });
 };
 
 
