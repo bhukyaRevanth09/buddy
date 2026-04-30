@@ -16,6 +16,7 @@ import api from "../../api/Apiclient.js";
 import { SocketContext } from "../../context/socketContext.js";
 
 export default function BookingScreen({ navigation }) {
+
   const { socket } = useContext(SocketContext);
 
   const [booking, setBooking] = useState(null);
@@ -30,14 +31,20 @@ export default function BookingScreen({ navigation }) {
     try {
       const res = await api.get("/booking/active");
 
-      if (res.data.success) {
-        setBooking(res.data.data);
+      if (res.data.success && res.data.data) {
 
-        // join room for tracking
-        socket.emit("join_booking_room", res.data.data._id);
+        const data = res.data.data;
+        setBooking(data);
+
+        // safe socket join
+        socket?.emit("join_booking_room", data._id);
+      } else {
+        setBooking(null);
       }
+
     } catch (err) {
       console.log("No active booking");
+      setBooking(null);
     } finally {
       setLoading(false);
     }
@@ -49,26 +56,31 @@ export default function BookingScreen({ navigation }) {
 
   /*
   ==============================
-  SOCKET LISTEN
+  SOCKET LISTENERS
   ==============================
   */
   useEffect(() => {
+
     if (!socket) return;
 
-    socket.on("booking_cancelled", () => {
+    const onCancel = () => {
       Alert.alert("Booking Cancelled");
       setBooking(null);
-    });
+    };
 
-    socket.on("booking_completed", () => {
+    const onComplete = () => {
       Alert.alert("Booking Completed");
       setBooking(null);
-    });
+    };
+
+    socket.on("booking_cancelled", onCancel);
+    socket.on("booking_completed", onComplete);
 
     return () => {
-      socket.off("booking_cancelled");
-      socket.off("booking_completed");
+      socket.off("booking_cancelled", onCancel);
+      socket.off("booking_completed", onComplete);
     };
+
   }, [socket]);
 
   /*
@@ -79,10 +91,11 @@ export default function BookingScreen({ navigation }) {
   const cancelBooking = async () => {
     try {
       await api.post("/booking/cancel", {
-        bookingId: booking._id
+        bookingId: booking?._id
       });
 
       setBooking(null);
+      Alert.alert("Booking cancelled");
 
     } catch (err) {
       Alert.alert("Cancel failed");
@@ -104,7 +117,7 @@ export default function BookingScreen({ navigation }) {
 
   /*
   ==============================
-  NO BOOKING
+  EMPTY STATE
   ==============================
   */
   if (!booking) {
@@ -162,7 +175,8 @@ export default function BookingScreen({ navigation }) {
         style={styles.trackBtn}
         onPress={() =>
           navigation.navigate("Tracking", {
-            bookingId: booking._id
+            bookingId: booking._id,
+            buddy: booking?.buddy
           })
         }
       >
@@ -186,90 +200,95 @@ export default function BookingScreen({ navigation }) {
   );
 }
 
+/*
+==============================
+STYLES
+==============================
+*/
 const styles = StyleSheet.create({
 
-container:{
-flex:1,
-backgroundColor:"#fff",
-padding:20
-},
+  container: {
+    flex: 1,
+    backgroundColor: "#fff",
+    padding: 20
+  },
 
-center:{
-flex:1,
-justifyContent:"center",
-alignItems:"center"
-},
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center"
+  },
 
-empty:{
-marginTop:10,
-color:"#777"
-},
+  empty: {
+    marginTop: 10,
+    color: "#777"
+  },
 
-title:{
-fontSize:22,
-fontWeight:"700",
-marginBottom:20
-},
+  title: {
+    fontSize: 22,
+    fontWeight: "700",
+    marginBottom: 20
+  },
 
-card:{
-flexDirection:"row",
-backgroundColor:"#F5F5F5",
-padding:15,
-borderRadius:12,
-alignItems:"center"
-},
+  card: {
+    flexDirection: "row",
+    backgroundColor: "#F5F5F5",
+    padding: 15,
+    borderRadius: 12,
+    alignItems: "center"
+  },
 
-avatar:{
-width:60,
-height:60,
-borderRadius:10,
-marginRight:15
-},
+  avatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 10,
+    marginRight: 15
+  },
 
-name:{
-fontSize:16,
-fontWeight:"700"
-},
+  name: {
+    fontSize: 16,
+    fontWeight: "700"
+  },
 
-info:{
-color:"#666",
-marginTop:2
-},
+  info: {
+    color: "#666",
+    marginTop: 2
+  },
 
-status:{
-marginTop:4,
-color:"#34C759",
-fontWeight:"600"
-},
+  status: {
+    marginTop: 4,
+    color: "#34C759",
+    fontWeight: "600"
+  },
 
-trackBtn:{
-marginTop:25,
-backgroundColor:"#007AFF",
-padding:15,
-borderRadius:12,
-flexDirection:"row",
-justifyContent:"center",
-alignItems:"center",
-gap:8
-},
+  trackBtn: {
+    marginTop: 25,
+    backgroundColor: "#007AFF",
+    padding: 15,
+    borderRadius: 12,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8
+  },
 
-trackText:{
-color:"#fff",
-fontWeight:"700"
-},
+  trackText: {
+    color: "#fff",
+    fontWeight: "700"
+  },
 
-cancelBtn:{
-marginTop:15,
-padding:15,
-borderRadius:12,
-alignItems:"center",
-borderWidth:1,
-borderColor:"#FF3B30"
-},
+  cancelBtn: {
+    marginTop: 15,
+    padding: 15,
+    borderRadius: 12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#FF3B30"
+  },
 
-cancelText:{
-color:"#FF3B30",
-fontWeight:"700"
-}
+  cancelText: {
+    color: "#FF3B30",
+    fontWeight: "700"
+  }
 
 });

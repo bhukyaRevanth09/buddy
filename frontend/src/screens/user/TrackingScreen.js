@@ -1,175 +1,365 @@
-import React, { useContext, useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import React, { useEffect, useState, useContext, useRef } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  TouchableOpacity,
+  Alert
+} from "react-native";
+
+import MapView, { Marker, Polyline } from "react-native-maps";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 
 import { SocketContext } from "../../context/socketContext.js";
-import LiveMap from "../../components/LiveMap.js";
+import api from "../../api/Apiclient.js";
 
 export default function TrackingScreen({ route, navigation }) {
 
+  const { bookingId, buddy } = route.params;
   const { socket } = useContext(SocketContext);
 
-  const { bookingId, userLocation } = route.params;
+  const mapRef = useRef(null);
 
+  const [userLocation, setUserLocation] = useState(null);
   const [buddyLocation, setBuddyLocation] = useState(null);
+  const [status, setStatus] = useState("accepted");
+  const [loading, setLoading] = useState(true);
+
+  const [distance, setDistance] = useState(0);
+  const [eta, setEta] = useState(0);
+
+  const watchRef = useRef(null);
 
   /*
-  ==============================
-  SOCKET LIVE TRACKING
-  ==============================
+  ===============================
+  LIVE USER LOCATION (SMOOTH)
+  ===============================
   */
   useEffect(() => {
-    if (!socket || !bookingId) return;
 
-    console.log("🎯 Join booking tracking:", bookingId);
+    let subscription;
 
-    // join booking room
-    socket.emit("track_booking", bookingId);
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert("Permission required");
+          return;
+        }
 
-    const handleLocation = (data) => {
-      console.log("📍 Buddy moving:", data);
+        subscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            timeInterval: 3000,
+            distanceInterval: 10
+          },
+          (loc) => {
+            setUserLocation({
+              latitude: loc.coords.latitude,
+              longitude: loc.coords.longitude
+            });
+          }
+        );
 
-      setBuddyLocation({
-        latitude: data.lat,
-        longitude: data.lng
-      });
-    };
-
-    // listen live location
-    socket.on("booking_location_update", handleLocation);
+      } catch (err) {
+        console.log("Location error", err);
+      } finally {
+        setLoading(false);
+      }
+    })();
 
     return () => {
-      socket.off("booking_location_update", handleLocation);
+      if (subscription) subscription.remove();
     };
-
-  }, [socket, bookingId]);
+  }, []);
 
   /*
-  ==============================
-  NAV BACK HANDLER
-  ==============================
+  ===============================
+  SOCKET LISTENERS
+  ===============================
   */
-  const handleBackHome = () => {
-    navigation.navigate("MainTabs", {
-      screen: "Home"
-    });
+  useEffect(() => {
+
+    if (!socket) return;
+
+    socket.emit("join_booking_room", bookingId);
+
+    const locationHandler = (data) => {
+      if (data.bookingId === bookingId) {
+        setBuddyLocation({
+          latitude: data.location?.latitude || data.lat,
+          longitude: data.location?.longitude || data.lng
+        });
+      }
+    };
+
+    const startedHandler = () => setStatus("started");
+
+    const completedHandler = () => {
+      setStatus("completed");
+      Alert.alert("Job Completed");
+      navigation.replace("Home");
+    };
+
+    socket.on("location_update", locationHandler);
+    socket.on("tracking_started", (data) => {
+  setStatus("started");
+});
+    socket.on("booking-completed", completedHandler);
+
+    return () => {
+      socket.off("location_update", locationHandler);
+      socket.off("booking-started", startedHandler);
+      socket.off("booking-completed", completedHandler);
+    };
+
+  }, [socket, bookingId, navigation]);
+
+  /*
+  ===============================
+  DISTANCE CALCULATION
+  ===============================
+  */
+  const getDistance = (lat1, lon1, lat2, lon2) => {
+    const toRad = (v) => (v * Math.PI) / 180;
+    const R = 6371;
+
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) *
+        Math.cos(toRad(lat2)) *
+        Math.sin(dLon / 2) ** 2;
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
   };
 
-  const handleBackToTracking = () => {
-    navigation.replace("Tracking", {
-      bookingId,
-      userLocation
-    });
+  /*
+  ===============================
+  UPDATE DISTANCE + ETA
+  ===============================
+  */
+  useEffect(() => {
+
+    if (!userLocation || !buddyLocation) return;
+
+    const dist = getDistance(
+      userLocation.latitude,
+      userLocation.longitude,
+      buddyLocation.latitude,
+      buddyLocation.longitude
+    );
+
+    setDistance(dist.toFixed(2));
+
+    const etaMinutes = (dist / 30) * 60;
+    setEta(Math.max(1, Math.ceil(etaMinutes)));
+
+  }, [userLocation, buddyLocation]);
+
+  /*
+  ===============================
+  FIT MAP
+  ===============================
+  */
+  useEffect(() => {
+
+    if (!userLocation || !buddyLocation) return;
+
+    mapRef.current?.fitToCoordinates(
+      [userLocation, buddyLocation],
+      {
+        edgePadding: {
+          top: 100,
+          right: 100,
+          bottom: 200,
+          left: 100
+        },
+        animated: true
+      }
+    );
+
+  }, [userLocation, buddyLocation]);
+
+  /*
+  ===============================
+  CANCEL BOOKING
+  ===============================
+  */
+  const cancelBooking = async () => {
+    try {
+      await api.post("/booking/cancel", { bookingId });
+      Alert.alert("Booking Cancelled");
+      navigation.replace("Home");
+    } catch {
+      Alert.alert("Cancel failed");
+    }
   };
+
+  /*
+  ===============================
+  LOADING
+  ===============================
+  */
+  if (loading || !userLocation) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
 
-      {/* LIVE MAP */}
-      <LiveMap
-        userLocation={userLocation}
-        buddyLocation={buddyLocation}
-      />
+      {/* MAP */}
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        showsUserLocation
+      >
 
-      {/* TOP INFO PANEL */}
-      <View style={styles.topPanel}>
+        {userLocation && (
+          <Marker coordinate={userLocation} title="You" pinColor="blue" />
+        )}
+
+        {buddyLocation && (
+          <Marker
+            coordinate={buddyLocation}
+            title={buddy?.name || "Buddy"}
+            pinColor="green"
+          />
+        )}
+
+        {userLocation && buddyLocation && (
+          <Polyline
+            coordinates={[userLocation, buddyLocation]}
+            strokeWidth={4}
+            strokeColor="#007AFF"
+          />
+        )}
+
+      </MapView>
+
+      {/* PANEL */}
+      <View style={styles.panel}>
+
         <Text style={styles.title}>
-          🚀 Live Tracking
+          {status.toUpperCase()}
         </Text>
 
-        <Text style={styles.subtitle}>
-          Buddy is on the way
+        <Text style={styles.text}>
+          📍 Distance: {distance} km
         </Text>
+
+        <Text style={styles.text}>
+          ⏱️ ETA: {eta} mins
+        </Text>
+
+        <Text style={styles.name}>
+          👤 {buddy?.name}
+        </Text>
+
+        <View style={styles.row}>
+
+          <TouchableOpacity style={styles.callBtn}>
+            <Ionicons name="call" size={18} color="#fff" />
+            <Text style={styles.btnText}>CALL</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.cancelBtn}
+            onPress={cancelBooking}
+          >
+            <Text style={styles.btnText}>CANCEL</Text>
+          </TouchableOpacity>
+
+        </View>
+
       </View>
 
-      {/* BOTTOM ACTION PANEL */}
-      <View style={styles.bottomPanel}>
-
-        <TouchableOpacity
-          style={styles.btnSecondary}
-          onPress={handleBackHome}
-        >
-          <Text style={styles.btnTextDark}>
-            Go Home
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.btnPrimary}
-          onPress={handleBackToTracking}
-        >
-          <Text style={styles.btnText}>
-            Refresh Tracking
-          </Text>
-        </TouchableOpacity>
-
-      </View>
-
-    </View>
+    </SafeAreaView>
   );
 }
 
+/*
+===============================
+STYLES
+===============================
+*/
 const styles = StyleSheet.create({
 
-  container: {
-    flex: 1
-  },
+  container: { flex: 1 },
+  map: { flex: 1 },
 
-  topPanel: {
-    position: "absolute",
-    top: 50,
-    left: 15,
-    right: 15,
-    backgroundColor: "white",
-    padding: 12,
-    borderRadius: 12,
-    elevation: 5
-  },
-
-  title: {
-    fontSize: 16,
-    fontWeight: "700"
-  },
-
-  subtitle: {
-    marginTop: 3,
-    color: "#555"
-  },
-
-  bottomPanel: {
-    position: "absolute",
-    bottom: 30,
-    left: 15,
-    right: 15,
-    flexDirection: "row",
-    justifyContent: "space-between"
-  },
-
-  btnPrimary: {
+  center: {
     flex: 1,
-    marginLeft: 10,
-    backgroundColor: "#000",
-    padding: 14,
-    borderRadius: 12,
+    justifyContent: "center",
     alignItems: "center"
   },
 
-  btnSecondary: {
+  panel: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#fff",
+    padding: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    elevation: 10
+  },
+
+  title: {
+    fontSize: 18,
+    fontWeight: "bold"
+  },
+
+  text: {
+    marginTop: 5,
+    fontSize: 14
+  },
+
+  name: {
+    marginTop: 10,
+    fontWeight: "600"
+  },
+
+  row: {
+    flexDirection: "row",
+    marginTop: 15
+  },
+
+  callBtn: {
     flex: 1,
+    backgroundColor: "#34C759",
+    padding: 12,
+    borderRadius: 10,
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
     marginRight: 10,
-    backgroundColor: "#eee",
-    padding: 14,
-    borderRadius: 12,
+    gap: 6
+  },
+
+  cancelBtn: {
+    flex: 1,
+    backgroundColor: "#FF3B30",
+    padding: 12,
+    borderRadius: 10,
     alignItems: "center"
   },
 
   btnText: {
     color: "#fff",
-    fontWeight: "700"
-  },
-
-  btnTextDark: {
-    color: "#000",
-    fontWeight: "700"
+    fontWeight: "600"
   }
 
 });

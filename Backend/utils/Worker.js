@@ -10,120 +10,80 @@ port: 6379
 };
 
 export const startBookingWorker = () => {
+  new Worker(
+    "bookingQueue",
+    async (job) => {
 
-const worker = new Worker(
-"bookingQueue",
-async (job) => {
+      if (job.name !== "check-acceptance") return;
 
-if (job.name !== "check-acceptance") return;
+      const { bookingId } = job.data;
 
-const { bookingId } = job.data;
+      const raw = await redis.get(`pending_booking:${bookingId}`);
+      if (!raw) return;
 
-const raw =
-await redis.get(`pending_booking:${bookingId}`);
+      const state = JSON.parse(raw);
 
-if (!raw) return;
+      const current = state.buddies[state.currentIndex];
 
-const state = JSON.parse(raw);
+      // 🔓 unlock previous
+      await unlockBuddy(current.id);
 
-/*
-UNLOCK PREVIOUS
-*/
+      const nextIndex = state.currentIndex + 1;
 
-const prevBuddy =
-state.buddies[state.currentIndex];
+      if (nextIndex >= state.buddies.length) {
+        getIO()
+          .to(state.user.toString())
+          .emit("booking-failed");
 
-await unlockBuddy(prevBuddy);
+        await redis.del(`pending_booking:${bookingId}`);
+        return;
+      }
 
-const nextIndex =
-state.currentIndex + 1;
+      const next = state.buddies[nextIndex];
 
-/*
-NO MORE BUDDIES
-*/
+      const locked = await lockBuddy(next.id);
 
-if (nextIndex >= state.buddies.length) {
+      if (!locked) {
+        state.currentIndex = nextIndex;
 
-getIO()
-.to(state.user.toString())
-.emit("booking-failed");
+        await redis.set(
+          `pending_booking:${bookingId}`,
+          JSON.stringify(state),
+          "EX",
+          600
+        );
 
-await redis.del(
-`pending_booking:${bookingId}`
-);
+        await bookingQueue.add(
+          "check-acceptance",
+          { bookingId },
+          { delay: 0 }
+        );
 
-return;
-}
+        return;
+      }
 
-/*
-TRY NEXT
-*/
+      // ✅ send full data
+      getIO().to(next.id).emit("new-booking-request", {
+        bookingId,
+        distance: (next.distance / 1000).toFixed(2)
+      });
 
-const nextBuddyId =
-state.buddies[nextIndex];
+      state.currentIndex = nextIndex;
 
-const locked =
-await lockBuddy(nextBuddyId);
+      await redis.set(
+        `pending_booking:${bookingId}`,
+        JSON.stringify(state),
+        "EX",
+        600
+      );
 
-/*
-IF LOCKED TRY NEXT
-*/
+      await bookingQueue.add(
+        "check-acceptance",
+        { bookingId },
+        { delay: 20000 }
+      );
 
-if (!locked) {
-
-state.currentIndex = nextIndex;
-
-await redis.set(
-`pending_booking:${bookingId}`,
-JSON.stringify(state),
-"EX",
-3600
-);
-
-await bookingQueue.add(
-"check-acceptance",
-{ bookingId },
-{ delay: 0 }
-);
-
-return;
-}
-
-/*
-SEND REQUEST
-*/
-
-state.currentIndex = nextIndex;
-
-await redis.set(
-`pending_booking:${bookingId}`,
-JSON.stringify(state),
-"EX",
-3600
-);
-
-getIO()
-.to(nextBuddyId)
-.emit("new-booking-request", {
-bookingId
-});
-
-/*
-QUEUE AGAIN
-*/
-
-await bookingQueue.add(
-"check-acceptance",
-{ bookingId },
-{ delay: 20000 }
-);
-
-},
-{ connection }
-);
-
-worker.on("failed", (job, err) =>
-console.log("Worker failed:", err)
-);
-
+    },
+    { connection }
+  );
 };

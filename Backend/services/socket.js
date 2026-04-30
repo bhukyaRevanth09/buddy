@@ -13,26 +13,18 @@ export const initSocket = (server) => {
   });
 
   /*
-  ================= AUTH
-  =================
+  =========================
+  AUTH MIDDLEWARE
+  =========================
   */
   io.use((socket, next) => {
     try {
       let token = socket.handshake.auth?.token;
 
-      if (!token) {
-        console.log("❌ No socket token");
-        return next(new Error("NO_TOKEN"));
-      }
+      if (!token) return next(new Error("NO_TOKEN"));
 
-      // remove Bearer
-      if (typeof token === "string" && token.startsWith("Bearer ")) {
+      if (token.startsWith("Bearer ")) {
         token = token.split(" ")[1];
-      }
-
-      // if JSON accidentally sent
-      if (typeof token === "object" && token.accessToken) {
-        token = token.accessToken;
       }
 
       const decoded = jwt.verify(token, process.env.JWT_KEY);
@@ -40,95 +32,103 @@ export const initSocket = (server) => {
       socket.userId = decoded.id || decoded._id;
       socket.role = decoded.role;
 
-      console.log("✅ Socket Auth Success:", socket.userId, socket.role);
+      console.log("✅ Socket Auth:", socket.userId, socket.role);
 
       next();
 
-    } catch (error) {
-
-      if (error.name === "TokenExpiredError") {
-        console.log("❌ Socket Token Expired");
-        return next(new Error("TOKEN_EXPIRED"));
-      }
-
-      console.log("❌ Socket Auth Error:", error.message);
+    } catch (err) {
+      console.log("❌ Socket Auth Failed:", err.message);
       next(new Error("AUTH_FAILED"));
     }
   });
 
   /*
-  ================= CONNECTION
-  =================
+  =========================
+  CONNECTION
+  =========================
   */
-  io.on("connection", async (socket) => {
-
+  io.on("connection", (socket) => {
     const { userId, role } = socket;
 
-    console.log(`🟢 ${role} connected:`, userId);
+    console.log(`🟢 Connected: ${role} → ${userId}`);
 
     socket.join(userId.toString());
 
     /*
-    ===================================================
-    BUDDY EVENTS
-    ===================================================
+    =========================
+    JOIN BOOKING ROOM (USER + BUDDY)
+    =========================
+    */
+    socket.on("join_booking_room", (bookingId) => {
+      if (!bookingId) return;
+
+      socket.join(`booking:${bookingId}`);
+      console.log(`📦 joined booking:${bookingId}`);
+    });
+
+    /*
+    =========================
+    BUDDY LIVE LOCATION
+    =========================
     */
     if (role === "buddy") {
 
-      await redis.hset("online_buddies", userId, "online");
-
-      socket.on("update_location", async (data) => {
+      socket.on("update_location", async ({ lat, lng, bookingId }) => {
         try {
-          const { lat, lng, bookingId } = data;
+          if (!lat || !lng) return;
 
+          // store latest location
           await redis.geoadd("buddy_locations", lng, lat, userId);
 
-          io.emit("buddy_live_location", {
-            buddyId: userId,
-            lat,
-            lng
-          });
-
+          /*
+          🔥 SEND TO BOOKING USER ONLY
+          */
           if (bookingId) {
-            io.to(`booking:${bookingId}`).emit(
-              "booking_location_update",
-              {
-                buddyId: userId,
-                lat,
-                lng,
-                timestamp: Date.now()
-              }
-            );
+            io.to(`booking:${bookingId}`).emit("location_update", {
+              bookingId,
+              buddyId: userId,
+              lat,
+              lng,
+              timestamp: Date.now()
+            });
           }
 
         } catch (err) {
-          console.log("Location error:", err);
+          console.log("❌ Location error:", err);
         }
       });
 
-      socket.on("buddy:status", async (data) => {
-        const { isOnline } = data;
+      /*
+      =========================
+      ONLINE / OFFLINE STATUS
+      =========================
+      */
+      socket.on("buddy:status", async ({ isOnline }) => {
+        try {
+          if (isOnline) {
+            await redis.hset("online_buddies", userId, "online");
+          } else {
+            await redis.hdel("online_buddies", userId);
+          }
 
-        if (isOnline) {
-          await redis.hset("online_buddies", userId, "online");
-        } else {
-          await redis.hdel("online_buddies", userId);
+          io.emit("buddy_status_updated", {
+            buddyId: userId,
+            isOnline
+          });
+
+        } catch (err) {
+          console.log(err);
         }
-
-        io.emit("buddy_status_updated", {
-          buddyId: userId,
-          isOnline
-        });
       });
     }
 
     /*
-    USER TRACK NEARBY
+    =========================
+    USER: WATCH NEARBY BUDDIES
+    =========================
     */
-    socket.on("watch_nearby_buddies", async (data) => {
+    socket.on("watch_nearby_buddies", async ({ lat, lng }) => {
       try {
-        const { lat, lng } = data;
-
         const buddies = await redis.georadius(
           "buddy_locations",
           lng,
@@ -146,24 +146,13 @@ export const initSocket = (server) => {
       }
     });
 
-    socket.on("track_booking", (bookingId) => {
-      socket.join(`booking:${bookingId}`);
-    });
-
-    socket.on("join_booking_room", (bookingId) => {
-      socket.join(`booking:${bookingId}`);
-    });
-
-    socket.on("watch_buddy", (buddyId) => {
-      socket.join(`buddy:${buddyId}`);
-    });
-
     /*
+    =========================
     DISCONNECT
+    =========================
     */
     socket.on("disconnect", async () => {
-
-      console.log(`🔴 ${role} disconnected:`, userId);
+      console.log(`🔴 Disconnected: ${role} → ${userId}`);
 
       if (role === "buddy") {
         await redis.hdel("online_buddies", userId);
@@ -174,7 +163,6 @@ export const initSocket = (server) => {
           isOnline: false
         });
       }
-
     });
 
   });

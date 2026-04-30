@@ -2,13 +2,14 @@ export default function ActiveJobScreen({ route, navigation }) {
 
   const { booking } = route.params;
 
-  const [status, setStatus] = useState("accepted");
+  const [status, setStatus] = useState(
+    booking?.status || "accepted"
+  );
+
   const [loading, setLoading] = useState(false);
 
   const update = async (endpoint, next) => {
-
     try {
-
       setLoading(true);
 
       const res = await api.post(`/booking/${endpoint}`, {
@@ -18,7 +19,6 @@ export default function ActiveJobScreen({ route, navigation }) {
       if (res.data.success) {
 
         if (endpoint === "complete") {
-
           navigation.replace("BuddyHome");
           return;
         }
@@ -36,9 +36,10 @@ export default function ActiveJobScreen({ route, navigation }) {
   return (
     <SafeAreaView style={styles.container}>
 
-      <Text style={styles.title}>
-        Booking Active
-      </Text>
+      <Text style={styles.title}>Booking Active</Text>
+
+      <Text>Customer: {booking?.customerName}</Text>
+      <Text>Address: {booking?.address?.fullAddress}</Text>
 
       {status === "accepted" && (
         <TouchableOpacity

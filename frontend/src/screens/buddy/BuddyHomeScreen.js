@@ -1,58 +1,43 @@
-import React, { useState, useRef, useContext, useEffect } from "react";
+import React, { useEffect, useState, useContext } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  Modal,
   TouchableOpacity,
-  SafeAreaView,
+  Modal,
+  Alert,
   ActivityIndicator,
-  Alert
+  ScrollView
 } from "react-native";
 
-import MapView, {
-  Circle,
-  Marker,
-  PROVIDER_GOOGLE
-} from "react-native-maps";
-
-import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "../../context/AuthContext.js";
 import { SocketContext } from "../../context/socketContext.js";
 import api from "../../api/Apiclient.js";
-
 import { useBuddySocket } from "../../../hooks/buddySocket.js";
-import { useLiveTracking } from "../../../hooks/useLiveLocation.js";
 
 export default function BuddyHome({ navigation }) {
 
   const { user, logout } = useAuth();
   const { socket } = useContext(SocketContext);
 
-  const mapRef = useRef(null);
-
-  const [isOnline, setIsOnline] = useState(user?.isOnline || false);
+  const [isOnline, setIsOnline] = useState(false);
   const [incomingRequest, setIncomingRequest] = useState(null);
-  const [location, setLocation] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [activeBooking, setActiveBooking] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const [stats, setStats] = useState({
+    earnings: 0,
+    completedJobs: 0,
+    rating: 4.8
+  });
 
   /*
-  ===============================
-  LIVE TRACKING
-  ===============================
-  */
-  const buddyLocation = useLiveTracking(
-    socket,
-    activeBooking?._id
-  );
-
-  /*
-  ===============================
-  SOCKET LISTENER
-  ===============================
+  ======================
+  SOCKET
+  ======================
   */
   useBuddySocket({
     socket,
@@ -61,60 +46,41 @@ export default function BuddyHome({ navigation }) {
   });
 
   /*
-  ===============================
-  GET CURRENT LOCATION
-  ===============================
+  ======================
+  LOAD DATA
+  ======================
   */
   useEffect(() => {
     (async () => {
+      try {
+        const res = await api.get("/buddy/dashboard");
 
-      let { status } =
-        await Location.requestForegroundPermissionsAsync();
-
-      if (status !== "granted") {
-        Alert.alert("Permission required");
+        if (res.data.success) {
+          setStats(res.data.data);
+        }
+      } catch (e) {
+        console.log(e);
+      } finally {
         setLoading(false);
-        return;
       }
-
-      const loc = await Location.getCurrentPositionAsync({});
-
-      const coords = {
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-        latitudeDelta: 0.015,
-        longitudeDelta: 0.015,
-      };
-
-      setLocation(coords);
-      setLoading(false);
-
     })();
   }, []);
 
   /*
-  ===============================
+  ======================
   TOGGLE STATUS
-  ===============================
+  ======================
   */
   const toggleStatus = async () => {
-
     try {
-
       const newStatus = !isOnline;
       setIsOnline(newStatus);
 
-      socket?.emit("buddy:status", {
-        isOnline: newStatus
-      });
+      socket?.emit("buddy:status", { isOnline: newStatus });
 
-      const res = await api.patch("/buddy/toggle-status", {
-        status: newStatus
+      await api.patch("/buddy/toggle-status", {
+        status: newStatus ? "available" : "offline"
       });
-
-      if (!res.data.success) {
-        setIsOnline(!newStatus);
-      }
 
     } catch {
       setIsOnline(!isOnline);
@@ -123,20 +89,17 @@ export default function BuddyHome({ navigation }) {
   };
 
   /*
-  ===============================
-  ACCEPT BOOKING
-  ===============================
+  ======================
+  ACCEPT REQUEST
+  ======================
   */
   const handleAccept = async () => {
-
     try {
-
       const res = await api.post("/booking/accept", {
         bookingId: incomingRequest.bookingId
       });
 
       if (res.data.success) {
-
         setActiveBooking(res.data.data);
         setIncomingRequest(null);
 
@@ -152,19 +115,15 @@ export default function BuddyHome({ navigation }) {
   };
 
   /*
-  ===============================
+  ======================
   LOGOUT
-  ===============================
+  ======================
   */
   const handleLogout = () => {
-    Alert.alert(
-      "Logout",
-      "Are you sure?",
-      [
-        { text: "Cancel" },
-        { text: "Logout", onPress: logout }
-      ]
-    );
+    Alert.alert("Logout", "Are you sure?", [
+      { text: "Cancel" },
+      { text: "Logout", onPress: logout }
+    ]);
   };
 
   if (loading) {
@@ -178,90 +137,55 @@ export default function BuddyHome({ navigation }) {
   return (
     <SafeAreaView style={styles.container}>
 
-      {/* MAP */}
-      <MapView
-        ref={mapRef}
-        provider={PROVIDER_GOOGLE}
-        style={styles.map}
-        showsUserLocation
-        initialRegion={location}
-      >
-
-        {location && (
-          <Circle
-            center={location}
-            radius={2000}
-            fillColor="rgba(0,122,255,0.1)"
-          />
-        )}
-
-        {buddyLocation && (
-          <Marker
-            coordinate={buddyLocation}
-            title="Live Location"
-            pinColor="green"
-          />
-        )}
-
-      </MapView>
-
-      {/* DASHBOARD */}
-      <View style={styles.dashboard}>
+      <ScrollView showsVerticalScrollIndicator={false}>
 
         {/* HEADER */}
-        <View style={styles.topRow}>
-
+        <View style={styles.header}>
           <View>
-            <Text style={styles.name}>
-              {user?.name}
-            </Text>
-
-            <Text style={styles.sub}>
-              Buddy Dashboard
-            </Text>
+            <Text style={styles.name}>Hi, {user?.name}</Text>
+            <Text style={styles.sub}>Buddy Dashboard</Text>
           </View>
 
-          <View style={styles.headerRight}>
-
-            <TouchableOpacity
-              style={[
-                styles.statusBtn,
-                { backgroundColor: isOnline ? "#34C759" : "#999" }
-              ]}
-              onPress={toggleStatus}
-            >
-              <Text style={styles.statusText}>
-                {isOnline ? "ONLINE" : "OFFLINE"}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.logout}
-              onPress={handleLogout}
-            >
-              <Ionicons
-                name="log-out-outline"
-                size={22}
-                color="#ff3b30"
-              />
-            </TouchableOpacity>
-
-          </View>
+          <TouchableOpacity onPress={toggleStatus} style={[
+            styles.statusBtn,
+            { backgroundColor: isOnline ? "#34C759" : "#999" }
+          ]}>
+            <Text style={styles.statusText}>
+              {isOnline ? "ONLINE" : "OFFLINE"}
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {/* ACTIVE BOOKING */}
+        {/* STATS */}
+        <View style={styles.statsRow}>
+
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>₹ {stats.earnings}</Text>
+            <Text style={styles.cardSub}>Earnings</Text>
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>{stats.completedJobs}</Text>
+            <Text style={styles.cardSub}>Jobs</Text>
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>⭐ {stats.rating}</Text>
+            <Text style={styles.cardSub}>Rating</Text>
+          </View>
+
+        </View>
+
+        {/* ACTIVE JOB */}
         {activeBooking ? (
-          <View style={styles.jobCard}>
+          <View style={styles.activeCard}>
+            <Text style={styles.sectionTitle}>Active Job</Text>
 
-            <Text style={styles.jobTitle}>
-              Active Booking
-            </Text>
-
-            <Text style={styles.jobText}>
+            <Text style={styles.text}>
               Customer: {activeBooking?.customerName}
             </Text>
 
-            <Text style={styles.jobText}>
+            <Text style={styles.text}>
               Category: {activeBooking?.categoryName}
             </Text>
 
@@ -273,50 +197,44 @@ export default function BuddyHome({ navigation }) {
                 })
               }
             >
-              <Text style={styles.goText}>
-                GO TO JOB
-              </Text>
+              <Text style={styles.goText}>GO TO JOB</Text>
             </TouchableOpacity>
-
           </View>
         ) : (
           <View style={styles.waitCard}>
-            <Text style={styles.waitText}>
-              Waiting for bookings...
-            </Text>
+            <Ionicons name="time-outline" size={40} color="#999" />
+            <Text style={styles.waitText}>Waiting for bookings...</Text>
           </View>
         )}
 
-      </View>
+        {/* LOGOUT */}
+        <TouchableOpacity style={styles.logout} onPress={handleLogout}>
+          <Ionicons name="log-out-outline" size={20} color="red" />
+          <Text style={{ color: "red", marginLeft: 5 }}>Logout</Text>
+        </TouchableOpacity>
 
-      {/* BOOKING MODAL */}
-      <Modal visible={!!incomingRequest} transparent>
+      </ScrollView>
+
+      {/* REQUEST MODAL */}
+      <Modal visible={!!incomingRequest} transparent animationType="fade">
         <View style={styles.modal}>
-          <View style={styles.card}>
+          <View style={styles.modalCard}>
 
-            <Text style={styles.title}>
-              New Booking Request
-            </Text>
+            <Text style={styles.modalTitle}>New Booking Request</Text>
 
-            <Text style={styles.info}>
-              Customer: {incomingRequest?.customerName}
-            </Text>
-
-            <Text style={styles.info}>
-              Category: {incomingRequest?.categoryName}
-            </Text>
-
-            <Text style={styles.info}>
+            <Text style={styles.modalText}>
               Distance: {incomingRequest?.distance} km
             </Text>
 
+            <Text style={styles.modalText}>
+              Address: {incomingRequest?.address}
+            </Text>
+
             <TouchableOpacity
-              style={styles.accept}
+              style={styles.acceptBtn}
               onPress={handleAccept}
             >
-              <Text style={styles.acceptText}>
-                ACCEPT BOOKING
-              </Text>
+              <Text style={styles.acceptText}>ACCEPT</Text>
             </TouchableOpacity>
 
           </View>
@@ -327,143 +245,160 @@ export default function BuddyHome({ navigation }) {
   );
 }
 
+/*
+======================
+STYLES (CLEAN UI)
+======================
+*/
 const styles = StyleSheet.create({
-container:{flex:1},
-map:{flex:1},
 
-dashboard:{
-position:"absolute",
-top:0,
-left:0,
-right:0,
-padding:15
-},
+  container: {
+    flex: 1,
+    backgroundColor: "#F6F7FB",
+    padding: 15
+  },
 
-topRow:{
-flexDirection:"row",
-justifyContent:"space-between",
-alignItems:"center",
-backgroundColor:"#fff",
-padding:12,
-borderRadius:12,
-elevation:3
-},
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center"
+  },
 
-headerRight:{
-flexDirection:"row",
-alignItems:"center"
-},
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20
+  },
 
-name:{
-fontSize:18,
-fontWeight:"bold"
-},
+  name: {
+    fontSize: 22,
+    fontWeight: "bold"
+  },
 
-sub:{
-fontSize:12,
-color:"#666"
-},
+  sub: {
+    color: "#666"
+  },
 
-statusBtn:{
-paddingHorizontal:12,
-paddingVertical:6,
-borderRadius:8,
-marginRight:10
-},
+  statusBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20
+  },
 
-statusText:{
-color:"#fff",
-fontWeight:"bold"
-},
+  statusText: {
+    color: "#fff",
+    fontWeight: "bold"
+  },
 
-logout:{
-padding:5
-},
+  statsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 20
+  },
 
-jobCard:{
-marginTop:10,
-backgroundColor:"#fff",
-padding:15,
-borderRadius:12,
-elevation:3
-},
+  card: {
+    flex: 1,
+    margin: 5,
+    backgroundColor: "#fff",
+    padding: 15,
+    borderRadius: 12,
+    alignItems: "center",
+    elevation: 3
+  },
 
-jobTitle:{
-fontSize:16,
-fontWeight:"bold",
-marginBottom:5
-},
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: "bold"
+  },
 
-jobText:{
-color:"#555",
-marginBottom:3
-},
+  cardSub: {
+    color: "#777",
+    marginTop: 5
+  },
 
-goBtn:{
-backgroundColor:"#007AFF",
-padding:10,
-borderRadius:8,
-marginTop:8
-},
+  activeCard: {
+    backgroundColor: "#fff",
+    padding: 15,
+    borderRadius: 12,
+    elevation: 3
+  },
 
-goText:{
-color:"#fff",
-textAlign:"center",
-fontWeight:"bold"
-},
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 10
+  },
 
-waitCard:{
-marginTop:10,
-backgroundColor:"#fff",
-padding:12,
-borderRadius:10
-},
+  text: {
+    color: "#555"
+  },
 
-waitText:{
-textAlign:"center",
-color:"#666"
-},
+  goBtn: {
+    marginTop: 10,
+    backgroundColor: "#007AFF",
+    padding: 12,
+    borderRadius: 10
+  },
 
-center:{
-flex:1,
-justifyContent:"center",
-alignItems:"center"
-},
+  goText: {
+    color: "#fff",
+    textAlign: "center",
+    fontWeight: "bold"
+  },
 
-modal:{
-flex:1,
-justifyContent:"center",
-alignItems:"center",
-backgroundColor:"rgba(0,0,0,0.5)"
-},
+  waitCard: {
+    alignItems: "center",
+    padding: 30,
+    backgroundColor: "#fff",
+    borderRadius: 12
+  },
 
-card:{
-backgroundColor:"#fff",
-padding:20,
-borderRadius:12,
-width:"85%"
-},
+  waitText: {
+    marginTop: 10,
+    color: "#777"
+  },
 
-title:{
-fontSize:18,
-fontWeight:"bold",
-marginBottom:10
-},
+  logout: {
+    flexDirection: "row",
+    marginTop: 20,
+    alignItems: "center",
+    justifyContent: "center"
+  },
 
-info:{
-marginBottom:6
-},
+  modal: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)"
+  },
 
-accept:{
-backgroundColor:"#34C759",
-padding:12,
-borderRadius:10,
-marginTop:10
-},
+  modalCard: {
+    backgroundColor: "#fff",
+    padding: 20,
+    borderRadius: 12,
+    width: "85%"
+  },
 
-acceptText:{
-color:"#fff",
-textAlign:"center",
-fontWeight:"bold"
-}
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold"
+  },
+
+  modalText: {
+    marginTop: 5
+  },
+
+  acceptBtn: {
+    marginTop: 15,
+    backgroundColor: "#34C759",
+    padding: 12,
+    borderRadius: 10
+  },
+
+  acceptText: {
+    color: "#fff",
+    textAlign: "center",
+    fontWeight: "bold"
+  }
 });

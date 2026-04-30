@@ -11,190 +11,203 @@ import { bookingQueue } from "../Config/queueConfig.js";
 import { lockBuddy } from "../utils/bookingLock.js";
 
 
+
+
 export const autoAssignBuddy = async (req, res) => {
-console.log(req.body)
-try {
+  console.log(req?.body)
+  try {
+    const {
+      category,
+      skills = [],
+      lat,
+      lng,
+      price,
+      fullAddress,
+      houseNo,
+      road,
+      landmark
+    } = req.body;
 
-const { category, skills, lat, lng, price } = req.body;
+    const io = getIO();
 
-const io = getIO();
+    const longitude = parseFloat(lng);
+    const latitude = parseFloat(lat);
 
-const longitude = parseFloat(lng);
-const latitude = parseFloat(lat);
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid location"
+      });
+    }
 
-const categoryId =
-new mongoose.Types.ObjectId(category);
+    /*
+    =========================
+    FIND BUDDIES
+    =========================
+    */
+    const buddies = await buddyModel.aggregate([
+      {
+        $geoNear: {
+          near: {
+            type: "Point",
+            coordinates: [longitude, latitude]
+          },
+          distanceField: "distance",
+          maxDistance: 20000,
+          spherical: true,
+          key: "geoLocation",
+          query: {
+            availabilityStatus: "available",
+            accountStatus: "active",
+            isOnline: true,
+            category: category
+          }
+        }
+      },
+      ...(skills.length
+        ? [{ $match: { skills: { $in: skills } } }]
+        : []),
+      { $limit: 5 }
+    ]);
 
-/*
-=========================
-FIND NEARBY BUDDIES
-=========================
-*/
+    if (!buddies.length) {
+      return res.json({
+        success: false,
+        message: "No buddies nearby"
+      });
+    }
 
-const buddies = await buddyModel.aggregate([
-{
-$geoNear: {
-near: {
-type: "Point",
-coordinates: [longitude, latitude]
-},
-distanceField: "distance",
-maxDistance: 10000,
-spherical: true,
-key: "geoLocation",
-query: {
-availabilityStatus: "available",
-accountStatus: "active",
-category: categoryId
-}
-}
-},
-{ $limit: 5 }
-]);
+    /*
+    =========================
+    CREATE STATE
+    =========================
+    */
+    const bookingId = `temp_${Date.now()}`;
 
-if (!buddies.length) {
-return res.json({
-success:false,
-message:"No buddies nearby"
-});
-}
+    const state = {
+      id: bookingId,
+      user: req.userId,
+      category,
+      skills,
+      pricing: { totalAmount: price || 0 },
 
-/*
-=========================
-CREATE TEMP BOOKING
-=========================
-*/
+      location: {
+        type: "Point",
+        coordinates: [longitude, latitude]
+      },
 
-const tempBookingId = `temp_bk_${uuidv4()}`;
+      address: {
+        fullAddress,
+        houseNo,
+        road,
+        landmark
+      },
 
-const bookingState = {
-id: tempBookingId,
-user: req.userId,
-category,
-requestedSkills: skills,
-pricing: { totalAmount: price || 0 },
-location:{
-type:"Point",
-coordinates:[longitude, latitude]
-},
-buddies: buddies.map(b=>b._id.toString()),
-currentIndex:0,
-status:"searching",
-createdAt: Date.now()
-};
+      buddies: buddies.map(b => ({
+        id: b._id.toString(),
+        distance: b.distance
+      })),
 
-await redis.set(
-`pending_booking:${tempBookingId}`,
-JSON.stringify(bookingState),
-"EX",
-60*10
-);
+      currentIndex: 0
+    };
 
-/*
-=========================
-SEND FIRST BUDDY
-=========================
-*/
+    await redis.set(
+      `pending_booking:${bookingId}`,
+      JSON.stringify(state),
+      "EX",
+      600
+    );
 
-const firstBuddy = buddies[0]._id.toString();
+    /*
+    =========================
+    ASSIGN FIRST
+    =========================
+    */
+    let assigned = null;
 
-// LOCK BUDDY
-const locked = await lockBuddy(firstBuddy);
+    for (let b of state.buddies) {
+      const locked = await lockBuddy(b.id);
+      if (locked) {
+        assigned = b;
+        break;
+      }
+    }
 
-if (!locked) {
-return res.json({
-success:false,
-message:"All buddies busy"
-});
-}
+    if (!assigned) {
+      return res.json({
+        success: false,
+        message: "All buddies busy"
+      });
+    }
 
-io.to(req.userId.toString()).emit(
-"booking-searching",
-{ bookingId: tempBookingId }
-);
+    /*
+    =========================
+    EMIT
+    =========================
+    */
+    io.to(req.userId.toString()).emit("booking-searching", {
+      bookingId
+    });
 
-io.to(firstBuddy).emit(
-"new-booking-request",
-{
-bookingId: tempBookingId,
-userId: req.userId,
-category,
-price,
-distance:(buddies[0].distance/1000).toFixed(1)
-}
-);
+    io.to(assigned.id).emit("new-booking-request", {
+      bookingId,
+      customerName: req.userName || "Customer",
+      categoryName: category,
+      distance: (assigned.distance / 1000).toFixed(2),
+      address: fullAddress,
+      location: { lat: latitude, lng: longitude }
+    });
 
-/*
-=========================
-QUEUE NEXT
-=========================
-*/
+    /*
+    =========================
+    QUEUE
+    =========================
+    */
+    await bookingQueue.add(
+      "check-acceptance",
+      { bookingId },
+      { delay: 20000 }
+    );
 
-await bookingQueue.add(
-"check-acceptance",
-{ bookingId: tempBookingId },
-{ delay: 20000 }
-);
+    res.json({
+      success: true,
+      bookingId
+    });
 
-res.json({
-success:true,
-bookingId: tempBookingId
-});
-
-} catch (err) {
-
-console.log("Auto assign error", err);
-
-res.status(500).json({
-success:false,
-message: err.message
-});
-
-}
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ success: false });
+  }
 };
 // --- PART 2: BUDDY ACCEPTS THE REQUEST ---
 
 export const acceptBooking = async (req, res) => {
-
   const { bookingId } = req.body;
   const buddyId = req.userId;
 
-  const raw =
-    await redis.get(`pending_booking:${bookingId}`);
+  const raw = await redis.get(`pending_booking:${bookingId}`);
 
-  if (!raw)
+  if (!raw) {
     return res.json({ success: false });
+  }
 
   const state = JSON.parse(raw);
 
-  await redis.del(
-    `pending_booking:${bookingId}`
-  );
+  await redis.del(`pending_booking:${bookingId}`);
 
-  /*
-  ===============================
-  NOTIFY USER - ACCEPTED
-  ===============================
-  */
-  getIO()
-    .to(state.user.toString())
-    .emit("booking-accepted", {
-      bookingId,
-      buddy: {
-        _id: buddyId
-      }
-    });
+  const io = getIO();
 
-  /*
-  ===============================
-  AUTO JOIN BOOKING ROOM
-  ===============================
-  */
-  getIO()
-    .to(state.user.toString())
-    .emit("start_tracking", {
-      bookingId
-    });
+  // 1. Send acceptance (optional)
+  io.to(state.user.toString()).emit("booking-accepted", {
+    bookingId,
+    buddy: { _id: buddyId }
+  });
+
+  // 2. IMPORTANT: start tracking event (FIXED NAME)
+  io.to(state.user.toString()).emit("tracking_started", {
+    bookingId,
+    buddyId
+  });
 
   res.json({ success: true });
 };
