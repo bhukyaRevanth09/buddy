@@ -1,29 +1,25 @@
 import { useEffect, useState } from "react";
 
-export default function useBuddyLocation(socket){
+export default function useBuddyLocation(socket) {
 
-const [buddyLocation,setBuddyLocation] = useState(null);
+  const [buddyLocation, setBuddyLocation] = useState(null);
 
-useEffect(()=>{
+  useEffect(() => {
+    if (!socket) return;
 
-if(!socket) return;
+    const handler = (data) => {
+      setBuddyLocation({
+        latitude: data.location?.latitude || data.lat,
+        longitude: data.location?.longitude || data.lng,
+        buddyId: data.buddyId
+      });
+    };
 
-socket.on("location_update",(data)=>{
+    socket.on("update_location", handler);
 
-setBuddyLocation({
-latitude:data.lat,
-longitude:data.lng,
-buddyId:data.buddyId
-});
+    return () => socket.off("update_location", handler);
 
-});
+  }, [socket]);
 
-return ()=>{
-socket.off("location_update");
-};
-
-},[socket]);
-
-return buddyLocation;
-
+  return buddyLocation;
 }

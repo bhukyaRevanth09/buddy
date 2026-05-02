@@ -1,16 +1,12 @@
 import { useEffect } from "react";
 import * as Haptics from "expo-haptics";
 
-export const useBuddySocket = ({
-  socket,
-  isOnline,
-  setIncomingRequest
-}) => {
+export const useBuddySocket = ({ socket, isOnline, setIncomingRequest }) => {
 
   useEffect(() => {
     if (!socket) return;
 
-    const handleNewRequest = (data) => {
+    const handler = (data) => {
       if (!isOnline) return;
 
       Haptics.notificationAsync(
@@ -20,11 +16,9 @@ export const useBuddySocket = ({
       setIncomingRequest(data);
     };
 
-    socket.on("new-booking-request", handleNewRequest);
+    socket.on("new-booking-request", handler);
 
-    return () => {
-      socket.off("new-booking-request", handleNewRequest);
-    };
+    return () => socket.off("new-booking-request", handler);
 
   }, [socket, isOnline]);
 };

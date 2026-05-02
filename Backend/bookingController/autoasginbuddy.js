@@ -14,7 +14,6 @@ import { lockBuddy } from "../utils/bookingLock.js";
 
 
 export const autoAssignBuddy = async (req, res) => {
-  console.log(req?.body)
   try {
     const {
       category,
@@ -40,11 +39,6 @@ export const autoAssignBuddy = async (req, res) => {
       });
     }
 
-    /*
-    =========================
-    FIND BUDDIES
-    =========================
-    */
     const buddies = await buddyModel.aggregate([
       {
         $geoNear: {
@@ -60,13 +54,11 @@ export const autoAssignBuddy = async (req, res) => {
             availabilityStatus: "available",
             accountStatus: "active",
             isOnline: true,
-            category: category
+            category
           }
         }
       },
-      ...(skills.length
-        ? [{ $match: { skills: { $in: skills } } }]
-        : []),
+      ...(skills.length ? [{ $match: { skills: { $in: skills } } }] : []),
       { $limit: 5 }
     ]);
 
@@ -77,11 +69,6 @@ export const autoAssignBuddy = async (req, res) => {
       });
     }
 
-    /*
-    =========================
-    CREATE STATE
-    =========================
-    */
     const bookingId = `temp_${Date.now()}`;
 
     const state = {
@@ -90,24 +77,15 @@ export const autoAssignBuddy = async (req, res) => {
       category,
       skills,
       pricing: { totalAmount: price || 0 },
-
       location: {
         type: "Point",
         coordinates: [longitude, latitude]
       },
-
-      address: {
-        fullAddress,
-        houseNo,
-        road,
-        landmark
-      },
-
+      address: { fullAddress, houseNo, road, landmark },
       buddies: buddies.map(b => ({
         id: b._id.toString(),
         distance: b.distance
       })),
-
       currentIndex: 0
     };
 
@@ -118,11 +96,6 @@ export const autoAssignBuddy = async (req, res) => {
       600
     );
 
-    /*
-    =========================
-    ASSIGN FIRST
-    =========================
-    */
     let assigned = null;
 
     for (let b of state.buddies) {
@@ -140,15 +113,12 @@ export const autoAssignBuddy = async (req, res) => {
       });
     }
 
-    /*
-    =========================
-    EMIT
-    =========================
-    */
+    // USER EVENT
     io.to(req.userId.toString()).emit("booking-searching", {
       bookingId
     });
 
+    // BUDDY EVENT
     io.to(assigned.id).emit("new-booking-request", {
       bookingId,
       customerName: req.userName || "Customer",
@@ -158,11 +128,6 @@ export const autoAssignBuddy = async (req, res) => {
       location: { lat: latitude, lng: longitude }
     });
 
-    /*
-    =========================
-    QUEUE
-    =========================
-    */
     await bookingQueue.add(
       "check-acceptance",
       { bookingId },
@@ -181,116 +146,88 @@ export const autoAssignBuddy = async (req, res) => {
 };
 // --- PART 2: BUDDY ACCEPTS THE REQUEST ---
 
+
 export const acceptBooking = async (req, res) => {
-  const { bookingId } = req.body;
-  const buddyId = req.userId;
+  try {
+    const { bookingId } = req.body;
+    const buddyId = req.userId;
 
-  const raw = await redis.get(`pending_booking:${bookingId}`);
+    const raw = await redis.get(`pending_booking:${bookingId}`);
+    if (!raw) {
+      return res.status(404).json({ success: false, message: "Expired" });
+    }
 
-  if (!raw) {
-    return res.json({ success: false });
+    const state = JSON.parse(raw);
+    await redis.del(`pending_booking:${bookingId}`);
+
+    const booking = await instantBookingModel.create({
+      user: state.user,
+      buddy: buddyId,
+      category: state.category,
+      skills: state.skills,
+      pricing: state.pricing,
+      location: state.location,
+      address: state.address,
+      status: "accepted"
+    });
+
+    const io = getIO();
+    const id = booking._id.toString();
+
+    /*
+    =========================
+    USER
+    =========================
+    */
+    io.to(state.user.toString()).emit("booking_accepted", {
+      bookingId: id,
+      buddy: { _id: buddyId }
+    });
+
+    /*
+    =========================
+    TRACKING START
+    =========================
+    */
+    io.to(`booking:${id}`).emit("tracking_started", {
+      bookingId: id
+    });
+
+    /*
+    =========================
+    BUDDY
+    =========================
+    */
+    io.to(buddyId.toString()).emit("booking_confirmed", {
+      bookingId: id
+    });
+
+    res.json({ success: true, data: booking });
+
+  } catch (err) {
+    res.status(500).json({ success: false });
   }
-
-  const state = JSON.parse(raw);
-
-  await redis.del(`pending_booking:${bookingId}`);
-
-  const io = getIO();
-
-  // 1. Send acceptance (optional)
-  io.to(state.user.toString()).emit("booking-accepted", {
-    bookingId,
-    buddy: { _id: buddyId }
-  });
-
-  // 2. IMPORTANT: start tracking event (FIXED NAME)
-  io.to(state.user.toString()).emit("tracking_started", {
-    bookingId,
-    buddyId
-  });
-
-  res.json({ success: true });
 };
 
 
 
-export const updateLiveLocation = async (req, res) => {
+export const completeBooking = async (req, res) => {
   try {
-    const { bookingId, lat, lng, heading, speed } = req.body;
-    const buddyId = req.userId;
+    const { bookingId } = req.body;
 
-    if (!bookingId || !lat || !lng) {
-      return res.status(400).json({
-        success: false,
-        message: "bookingId, lat, lng required",
-      });
-    }
+    await instantBookingModel.findByIdAndUpdate(bookingId, {
+      status: "completed"
+    });
 
     const io = getIO();
 
-    /*
-    =========================
-    BROADCAST LIVE LOCATION
-    =========================
-    */
-
-    io.to(`booking:${bookingId}`).emit("location_update", {
-      bookingId,
-      buddyId,
-      location: {
-        latitude: lat,
-        longitude: lng,
-        heading: heading || 0,
-        speed: speed || 0,
-      },
-      timestamp: Date.now(),
+    io.to(`booking:${bookingId}`).emit("booking_completed", {
+      bookingId
     });
 
-    /*
-    =========================
-    OPTIONAL: SAVE LAST LOCATION
-    =========================
-    */
+    res.json({ success: true });
 
-    await instantBookingModel.findByIdAndUpdate(
-      bookingId,
-      {
-        lastLocation: {
-          type: "Point",
-          coordinates: [lng, lat],
-          updatedAt: new Date(),
-        },
-      },
-       { returnDocument: "after" }
-    );
-
-    res.json({
-      success: true,
-    });
-
-  } catch (error) {
-    console.error("live tracking error", error);
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-export const getBookingStatus = async (req, res) => {
-  try {
-    const { bookingId } = req.params;
-    
-    // We 'populate' the buddy field to get their name and rating for the user
-    const booking = await instantBookingModel.findById(bookingId)
-      .populate('buddy', 'firstName lastName rating profilePicture');
-
-    if (!booking) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
-    }
-
-    res.status(200).json({ success: true, data: booking });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+  } catch (err) {
+    res.status(500).json({ success: false });
   }
 };

@@ -32,11 +32,10 @@ export default function BookingScreen({ navigation }) {
       const res = await api.get("/booking/active");
 
       if (res.data.success && res.data.data) {
-
         const data = res.data.data;
         setBooking(data);
 
-        // safe socket join
+        // join booking room (REAL-TIME TRACKING)
         socket?.emit("join_booking_room", data._id);
       } else {
         setBooking(null);
@@ -56,29 +55,34 @@ export default function BookingScreen({ navigation }) {
 
   /*
   ==============================
-  SOCKET LISTENERS
+  SOCKET LISTENERS (MATCHED WITH BACKEND)
   ==============================
   */
   useEffect(() => {
-
     if (!socket) return;
 
-    const onCancel = () => {
-      Alert.alert("Booking Cancelled");
-      setBooking(null);
+    /*
+    LIVE TRACKING START
+    */
+    const onTrackingStarted = (data) => {
+      console.log("Tracking started:", data);
+      // you can update UI state here if needed
     };
 
-    const onComplete = () => {
-      Alert.alert("Booking Completed");
-      setBooking(null);
+    /*
+    LIVE LOCATION UPDATE
+    */
+    const onLocationUpdate = (data) => {
+      console.log("Live location:", data);
+      // optional: update map screen if you use it
     };
 
-    socket.on("booking_cancelled", onCancel);
-    socket.on("booking_completed", onComplete);
+    socket.on("tracking_started", onTrackingStarted);
+    socket.on("update_location", onLocationUpdate);
 
     return () => {
-      socket.off("booking_cancelled", onCancel);
-      socket.off("booking_completed", onComplete);
+      socket.off("tracking_started", onTrackingStarted);
+      socket.off("update_location", onLocationUpdate);
     };
 
   }, [socket]);
@@ -170,7 +174,7 @@ export default function BookingScreen({ navigation }) {
         </View>
       </View>
 
-      {/* TRACK BUTTON */}
+      {/* TRACK */}
       <TouchableOpacity
         style={styles.trackBtn}
         onPress={() =>

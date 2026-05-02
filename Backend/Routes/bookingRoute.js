@@ -1,5 +1,5 @@
 import express from 'express';
-import { autoAssignBuddy,getBookingStatus,acceptBooking } from '../bookingController/autoasginbuddy.js';
+import { autoAssignBuddy,completeBooking,acceptBooking } from '../bookingController/autoasginbuddy.js';
 import { cancelBooking } from '../bookingController/rejectBooking.js'; // Standardized to reject/cancel
 import { completeWork } from '../bookingController/completework.js';
 import { markArrived } from '../bookingController/arrivedController.js';
@@ -17,7 +17,7 @@ bookingRouter.post('/arrived', authMiddleware, markArrived);
 bookingRouter.post('/complete', authMiddleware, completeWork);
 
 // Both can check status
-bookingRouter.get('/status/:bookingId', authMiddleware, getBookingStatus);
+bookingRouter.get('/status/:bookingId', authMiddleware, completeBooking);
  
 // Reject (Buddy) or Cancel (User)
 bookingRouter.post('/cancel', authMiddleware, cancelBooking);

@@ -26,7 +26,6 @@ export const markArrived = async (req, res, next) => {
     GENERATE OTP
     ========================
     */
-
     const otp = generateOTP();
 
     booking.status = "arrived";
@@ -44,40 +43,41 @@ export const markArrived = async (req, res, next) => {
 
     /*
     ========================
-    NOTIFY USER (ARRIVED)
+    USER NOTIFICATION
     ========================
     */
 
-    io.to(booking.user.toString()).emit("buddy-arrived", {
+    io.to(booking.user.toString()).emit("booking_arrived", {
       bookingId,
+      status: "arrived",
       arrivedAt: booking.arrivedAt
     });
 
     /*
     ========================
-    SEND OTP
+    OTP EVENT (SECURE VERSION)
     ========================
     */
-
-    io.to(booking.user.toString()).emit("otp", {
+    io.to(booking.user.toString()).emit("booking_otp_generated", {
       bookingId,
-      otp // remove in production
+      // ⚠️ DO NOT SEND OTP IN PRODUCTION
+      otp: process.env.NODE_ENV === "development" ? otp : undefined
     });
 
     /*
     ========================
-    BROADCAST TRACKING ROOM
+    TRACKING ROOM UPDATE
     ========================
     */
 
-    io.to(`booking:${bookingId}`).emit("booking-status-update", {
+    io.to(`booking:${bookingId}`).emit("booking_status_update", {
       bookingId,
       status: "arrived"
     });
 
-    res.json({
+    return res.json({
       success: true,
-      message: "Buddy arrived. OTP generated",
+      message: "Buddy arrived. OTP generated"
     });
 
   } catch (err) {

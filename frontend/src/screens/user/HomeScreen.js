@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useContext, useRef } from "react";
+import React, { useEffect, useState, useContext } from "react";
 import {
   View,
   Text,
@@ -6,34 +6,22 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  Dimensions
+  Alert
 } from "react-native";
-
-import MapView, { Marker } from "react-native-maps";
-import { MaterialIcons } from "@expo/vector-icons";
-import { SafeAreaView } from "react-native-safe-area-context";
-import * as Location from "expo-location";
 
 import api from "../../api/Apiclient";
 import { SocketContext } from "../../context/socketContext.js";
 import { LocationContext } from "../../context/LocationContext";
-
-const { height } = Dimensions.get("window");
+import * as Location from "expo-location";
 
 export default function HomeScreen({ navigation }) {
 
-  const mapRef = useRef(null);
   const { socket } = useContext(SocketContext);
+  const { currentLocation, selectedLocation } = useContext(LocationContext);
 
-  const {
-    currentLocation,
-    selectedLocation
-  } = useContext(LocationContext);
+  const userLocation = selectedLocation ?? currentLocation ?? null;
 
-  const userLocation = selectedLocation || currentLocation;
-
-  const [locationName, setLocationName] = useState("");
-  const [lastFetchedCoords, setLastFetchedCoords] = useState(null);
+  const [address, setAddress] = useState("");
 
   const [categories, setCategories] = useState([]);
   const [availableSkills, setAvailableSkills] = useState([]);
@@ -47,77 +35,85 @@ export default function HomeScreen({ navigation }) {
   const [bookingLoading, setBookingLoading] = useState(false);
 
   /*
-  ===========================
-  NORMALIZE LOCATION
-  ===========================
-  */
-  const normalizeLocation = (loc) => {
-    if (!loc) return null;
-
-    return {
-      latitude: loc.latitude,
-      longitude: loc.longitude,
-      houseNo: loc.houseNo || "",
-      road: loc.road || "",
-      landmark: loc.landmark || "",
-      fullAddress: loc.fullAddress || "",
-      type: loc.type || "current"
-    };
-  };
-
-  /*
-  ===========================
-  ADDRESS (OPTIMIZED)
-  ===========================
+  =========================
+  SOCKET LISTENERS
+  =========================
   */
   useEffect(() => {
+    if (!socket) return;
 
-    if (!userLocation) return;
+    const onAccepted = (data) => {
+      console.log("✅ Booking accepted:", data);
 
-    // ✅ Use saved address
-    if (selectedLocation?.fullAddress) {
-      setLocationName(selectedLocation.fullAddress);
-      return;
-    }
+      navigation.navigate("Tracking", {
+        bookingId: data.bookingId,
+        buddy: data.buddy,
+        userLocation // ✅ FIXED
+      });
+    };
 
-    // ✅ Avoid duplicate API calls
-    if (
-      lastFetchedCoords &&
-      lastFetchedCoords.latitude === userLocation.latitude &&
-      lastFetchedCoords.longitude === userLocation.longitude
-    ) return;
+    const onTrackingStart = (data) => {
+      console.log("🚀 Tracking started:", data);
 
-    setLastFetchedCoords(userLocation);
+      navigation.navigate("Tracking", {
+        bookingId: data.bookingId,
+        buddy: data.buddy || { _id: data.buddyId },
+        userLocation // ✅ FIXED
+      });
+    };
 
-    (async () => {
+    socket.on("booking-accepted", onAccepted);
+    socket.on("tracking_started", onTrackingStart);
+
+    return () => {
+      socket.off("booking-accepted", onAccepted);
+      socket.off("tracking_started", onTrackingStart);
+    };
+
+  }, [socket, userLocation]);
+
+  /*
+  =========================
+  REVERSE GEOCODING
+  =========================
+  */
+  useEffect(() => {
+    const fetchAddress = async () => {
+      if (!userLocation) return;
+
       try {
-        const res = await Location.reverseGeocodeAsync(userLocation);
+        const result = await Location.reverseGeocodeAsync({
+          latitude: userLocation.latitude,
+          longitude: userLocation.longitude,
+        });
 
-        if (res.length > 0) {
-          const place = res[0];
+        if (result.length > 0) {
+          const place = result[0];
 
-          const cleanAddress = [
+          const formatted = [
+            place.name,
             place.street,
-            place.city,
-            place.region
+            place.city || place.district,
+            place.region,
+            place.country
           ]
             .filter(Boolean)
             .join(", ");
 
-          setLocationName(cleanAddress);
+          setAddress(formatted);
         }
-
-      } catch (e) {
-        console.log("Reverse geocode error", e);
+      } catch (err) {
+        console.log("Reverse geocode error:", err);
       }
-    })();
+    };
 
+    fetchAddress();
   }, [userLocation]);
 
   /*
-  ===========================
-  LOAD INITIAL DATA
-  ===========================
+  =========================
+  LOAD DATA
+  =========================
   */
   useEffect(() => {
     (async () => {
@@ -131,55 +127,31 @@ export default function HomeScreen({ navigation }) {
         setAvailableInterests(intRes.data.data || []);
 
       } catch (err) {
-        console.log("Init Data Error:", err);
+        console.log("Load error:", err);
+      } finally {
+        setLoading(false); // ✅ always stop loader
       }
-
-      setLoading(false);
     })();
   }, []);
 
   /*
-  ===========================
-  MAP ANIMATION
-  ===========================
-  */
-  useEffect(() => {
-    if (!userLocation) return;
-
-    mapRef.current?.animateToRegion({
-      latitude: userLocation.latitude,
-      longitude: userLocation.longitude,
-      latitudeDelta: 0.05,
-      longitudeDelta: 0.05
-    }, 800);
-
-  }, [userLocation]);
-
-  /*
-  ===========================
+  =========================
   LOAD SKILLS
-  ===========================
+  =========================
   */
   useEffect(() => {
-
     if (!selectedCategory?._id) {
       setAvailableSkills([]);
       setSelectedSkills([]);
       return;
     }
 
-    api
-      .get(`/user/skills/${selectedCategory._id}`)
+    api.get(`/user/skills/${selectedCategory._id}`)
       .then(res => setAvailableSkills(res.data.data || []))
       .catch(() => setAvailableSkills([]));
 
   }, [selectedCategory]);
 
-  /*
-  ===========================
-  HELPERS
-  ===========================
-  */
   const toggleSelection = (id, list, setList) => {
     setList(prev =>
       prev.includes(id)
@@ -188,30 +160,16 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
-  const recenterMap = () => {
-    if (!currentLocation) return;
-
-    mapRef.current?.animateToRegion({
-      latitude: currentLocation.latitude,
-      longitude: currentLocation.longitude,
-      latitudeDelta: 0.05,
-      longitudeDelta: 0.05
-    }, 800);
-  };
-
-  const isFindDisabled =
-    !selectedCategory || selectedSkills.length === 0;
+  const isDisabled =
+    !selectedCategory || selectedSkills.length === 0 || !userLocation;
 
   /*
-  ===========================
-  BOOKING (SAFE)
-  ===========================
+  =========================
+  BOOKING REQUEST
+  =========================
   */
   const handleFindBuddy = async () => {
-
-    if (isFindDisabled || bookingLoading) return;
-
-    const loc = normalizeLocation(userLocation);
+    if (isDisabled || bookingLoading) return;
 
     try {
       setBookingLoading(true);
@@ -220,99 +178,77 @@ export default function HomeScreen({ navigation }) {
         category: selectedCategory._id,
         skills: selectedSkills,
         interests: selectedInterests,
-        lat: loc.latitude,
-        lng: loc.longitude,
-        houseNo: loc.houseNo,
-        road: loc.road,
-        landmark: loc.landmark,
-        fullAddress: loc.fullAddress || locationName,
-        addressType: loc.type,
+        lat: userLocation.latitude,
+        lng: userLocation.longitude,
+        fullAddress: address || "Unknown location",
         price: 0
       };
 
       const res = await api.post("/booking/request", payload);
 
       if (!res.data.success) {
-        alert(res.data.message || "No buddies available");
+        Alert.alert("Error", res.data.message);
         return;
       }
 
       navigation.navigate("Matching", {
         bookingId: res.data.bookingId,
-        location: loc
+        location: userLocation
       });
 
     } catch (err) {
-      console.log("Booking error:", err);
-      alert("No buddies available");
+      Alert.alert(
+        "Booking Failed",
+        err?.response?.data?.message || "Server error"
+      );
+    } finally {
+      setBookingLoading(false); // ✅ FIXED
     }
-
-    setBookingLoading(false);
   };
 
   /*
-  ===========================
+  =========================
   LOADING
-  ===========================
+  =========================
   */
   if (loading || !userLocation) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#4CAF50" />
+        <ActivityIndicator size="large" />
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
 
-      {/* MAP */}
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        showsUserLocation
-      >
-        {selectedLocation && (
-          <Marker
-            coordinate={selectedLocation}
-            pinColor="red"
-          />
-        )}
-      </MapView>
+      {/* HEADER */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Find a Buddy</Text>
+        <Text style={styles.sub}>Select category, skills & interests</Text>
+      </View>
 
       {/* LOCATION */}
       <TouchableOpacity
-        style={styles.selectLocationBtn}
+        style={styles.locationBox}
         onPress={() => navigation.navigate("SelectLocation")}
       >
-        <MaterialIcons name="location-on" size={20} color="#4CAF50"/>
+        <Text style={styles.locationTitle}>
+          📍 {selectedLocation ? "Selected Location" : "Current Location"}
+        </Text>
 
-        <View style={{ marginLeft: 10 }}>
-          <Text style={styles.selectLabel}>
-            {selectedLocation ? "Selected Location" : "Current Location"}
-          </Text>
-
-          <Text style={styles.selectText} numberOfLines={2}>
-            {locationName || "Loading address..."}
-          </Text>
-        </View>
+        <Text style={styles.locationSub}>
+          {address || "Fetching address..."}
+        </Text>
       </TouchableOpacity>
 
-      {/* RECENTER */}
-      <TouchableOpacity
-        style={styles.recenterBtn}
-        onPress={recenterMap}
-      >
-        <MaterialIcons name="my-location" size={24} color="#007AFF"/>
-      </TouchableOpacity>
-
-      {/* FILTER PANEL */}
+      {/* PANEL */}
       <View style={styles.panel}>
         <ScrollView>
 
+          {/* CATEGORY */}
           <Text style={styles.label}>Category</Text>
-
-          <ScrollView horizontal>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {categories.map(c => (
               <TouchableOpacity
                 key={c._id}
@@ -323,7 +259,7 @@ export default function HomeScreen({ navigation }) {
                 ]}
               >
                 <Text style={{
-                  color: selectedCategory?._id === c._id ? "#fff" : "#333"
+                  color: selectedCategory?._id === c._id ? "#fff" : "#000"
                 }}>
                   {c.name}
                 </Text>
@@ -331,9 +267,9 @@ export default function HomeScreen({ navigation }) {
             ))}
           </ScrollView>
 
+          {/* SKILLS */}
           <Text style={styles.label}>Skills</Text>
-
-          <ScrollView horizontal>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {availableSkills.map(s => (
               <TouchableOpacity
                 key={s._id}
@@ -346,7 +282,7 @@ export default function HomeScreen({ navigation }) {
                 ]}
               >
                 <Text style={{
-                  color: selectedSkills.includes(s._id) ? "#fff" : "#333"
+                  color: selectedSkills.includes(s._id) ? "#fff" : "#000"
                 }}>
                   {s.name}
                 </Text>
@@ -354,9 +290,9 @@ export default function HomeScreen({ navigation }) {
             ))}
           </ScrollView>
 
+          {/* INTERESTS */}
           <Text style={styles.label}>Interests (optional)</Text>
-
-          <ScrollView horizontal>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {availableInterests.map(i => (
               <TouchableOpacity
                 key={i._id}
@@ -369,7 +305,7 @@ export default function HomeScreen({ navigation }) {
                 ]}
               >
                 <Text style={{
-                  color: selectedInterests.includes(i._id) ? "#fff" : "#333"
+                  color: selectedInterests.includes(i._id) ? "#fff" : "#000"
                 }}>
                   {i.name}
                 </Text>
@@ -377,18 +313,19 @@ export default function HomeScreen({ navigation }) {
             ))}
           </ScrollView>
 
+          {/* BUTTON */}
           <TouchableOpacity
-            disabled={isFindDisabled || bookingLoading}
+            disabled={isDisabled || bookingLoading}
             style={[
               styles.findBtn,
-              (isFindDisabled || bookingLoading) && styles.disabledBtn
+              (isDisabled || bookingLoading) && styles.disabledBtn
             ]}
             onPress={handleFindBuddy}
           >
             {bookingLoading ? (
-              <ActivityIndicator color="#fff"/>
+              <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={{color:"#fff", fontWeight:"700"}}>
+              <Text style={{ color: "#fff", fontWeight: "700" }}>
                 Confirm Booking
               </Text>
             )}
@@ -397,83 +334,91 @@ export default function HomeScreen({ navigation }) {
         </ScrollView>
       </View>
 
-    </SafeAreaView>
+    </View>
   );
 }
 
+/*
+STYLES
+*/
 const styles = StyleSheet.create({
-container:{flex:1,backgroundColor:"#fff"},
-map:{flex:1},
 
-selectLocationBtn:{
-position:"absolute",
-top:50,
-left:20,
-right:20,
-backgroundColor:"#fff",
-flexDirection:"row",
-padding:14,
-borderRadius:15,
-elevation:5,
-alignItems:"center"
-},
+  container: { flex: 1, backgroundColor: "#F6F7FB" },
 
-selectLabel:{fontSize:11,color:"#999"},
-selectText:{
-fontSize:13,
-fontWeight:"600",
-color:"#000",
-width:260,
-lineHeight:18
-},
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center"
+  },
 
-recenterBtn:{
-position:"absolute",
-bottom:height*0.46,
-right:20,
-backgroundColor:"#fff",
-padding:12,
-borderRadius:30,
-elevation:5
-},
+  header: {
+    padding: 20,
+    paddingTop: 50
+  },
 
-panel:{
-position:"absolute",
-bottom:90,
-left:10,
-right:10,
-backgroundColor:"#fff",
-padding:15,
-borderRadius:25,
-maxHeight:height*0.38,
-elevation:20
-},
+  title: {
+    fontSize: 22,
+    fontWeight: "bold"
+  },
 
-label:{fontWeight:"700",marginTop:12,marginBottom:5},
+  sub: {
+    color: "#777",
+    marginTop: 4
+  },
 
-chip:{
-paddingHorizontal:15,
-paddingVertical:8,
-backgroundColor:"#f0f0f0",
-borderRadius:20,
-margin:5
-},
+  locationBox: {
+    marginHorizontal: 20,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "#fff",
+    elevation: 3
+  },
 
-activeChip:{backgroundColor:"#4CAF50"},
+  locationTitle: {
+    fontWeight: "700",
+    fontSize: 14
+  },
 
-findBtn:{
-backgroundColor:"#000",
-padding:16,
-borderRadius:15,
-marginTop:20,
-alignItems:"center"
-},
+  locationSub: {
+    marginTop: 4,
+    fontSize: 12,
+    color: "#666"
+  },
 
-disabledBtn:{backgroundColor:"#ccc"},
+  panel: {
+    flex: 1,
+    backgroundColor: "#fff",
+    marginTop: 10,
+    borderTopLeftRadius: 25,
+    borderTopRightRadius: 25,
+    padding: 15
+  },
 
-center:{
-flex:1,
-justifyContent:"center",
-alignItems:"center"
-}
+  label: {
+    fontWeight: "700",
+    marginTop: 14
+  },
+
+  chip: {
+    padding: 10,
+    backgroundColor: "#f0f0f0",
+    margin: 5,
+    borderRadius: 20
+  },
+
+  activeChip: {
+    backgroundColor: "#4CAF50"
+  },
+
+  findBtn: {
+    marginTop: 20,
+    backgroundColor: "#000",
+    padding: 15,
+    borderRadius: 15,
+    alignItems: "center"
+  },
+
+  disabledBtn: {
+    backgroundColor: "#ccc"
+  }
 });

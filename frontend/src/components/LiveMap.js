@@ -1,60 +1,48 @@
-import React, { useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet } from "react-native";
-import MapView, { Marker, Polyline } from "react-native-maps";
+import React, { useEffect, useRef, useState, useContext } from "react";
+import { View, Text, ActivityIndicator, StyleSheet } from "react-native";
+import MapView, { Marker } from "react-native-maps";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-export default function LiveMap({
-  userLocation,
-  buddyLocation,
-  route
-}) {
+import { SocketContext } from "../../context/socketContext";
+
+import useUserLocation from "../../../hooks/useUserLocation";
+import useTrackingSocket from "../../../hooks/useTrackingSocket";
+import { calculateDistance } from "../../../hooks/useDistance";
+
+export default function TrackingScreen({ route }) {
+
+  const { bookingId, buddy } = route.params;
+  const { socket } = useContext(SocketContext);
+
   const mapRef = useRef(null);
+
+  const userLocation = useUserLocation();
+  const { buddyLocation, status } = useTrackingSocket(socket, bookingId);
 
   const [distance, setDistance] = useState(0);
   const [eta, setEta] = useState(0);
 
   /*
-  Haversine formula
-  */
-  const getDistance = (lat1, lon1, lat2, lon2) => {
-    const toRad = (v) => (v * Math.PI) / 180;
-
-    const R = 6371;
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(toRad(lat1)) *
-        Math.cos(toRad(lat2)) *
-        Math.sin(dLon / 2) ** 2;
-
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
-  };
-
-  /*
-  UPDATE DISTANCE + ETA
+  =========================
+  DISTANCE + ETA UPDATE
+  =========================
   */
   useEffect(() => {
     if (!userLocation || !buddyLocation) return;
 
-    const dist = getDistance(
-      userLocation.latitude,
-      userLocation.longitude,
-      buddyLocation.latitude,
-      buddyLocation.longitude
-    );
+    const dist = calculateDistance(userLocation, buddyLocation);
 
-    setDistance(dist.toFixed(2));
+    setDistance(dist);
 
-    // assume avg speed 30 km/h (city travel)
-    const etaMinutes = (dist / 30) * 60;
-    setEta(Math.max(1, Math.ceil(etaMinutes)));
+    const etaCalc = dist ? Math.max(1, Math.ceil((dist / 30) * 60)) : 0;
+    setEta(etaCalc);
+
   }, [userLocation, buddyLocation]);
 
   /*
-  FIT MAP BOUNDS
+  =========================
+  AUTO FIT MAP
+  =========================
   */
   useEffect(() => {
     if (!userLocation || !buddyLocation) return;
@@ -63,52 +51,63 @@ export default function LiveMap({
       [userLocation, buddyLocation],
       {
         edgePadding: {
-          top: 120,
-          right: 120,
-          bottom: 120,
-          left: 120
+          top: 100,
+          right: 100,
+          bottom: 200,
+          left: 100
         },
         animated: true
       }
     );
+
   }, [userLocation, buddyLocation]);
 
+  /*
+  =========================
+  LOADING STATE
+  =========================
+  */
+  if (!userLocation) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
   return (
-    <View style={{ flex: 1 }}>
+    <SafeAreaView style={styles.container}>
 
       {/* MAP */}
       <MapView
         ref={mapRef}
-        style={{ flex: 1 }}
+        style={styles.map}
         showsUserLocation
       >
-        {userLocation && (
-          <Marker
-            coordinate={userLocation}
-            title="You"
-            pinColor="blue"
-          />
-        )}
 
+        {/* USER */}
+        <Marker coordinate={userLocation} title="You" pinColor="blue" />
+
+        {/* BUDDY */}
         {buddyLocation && (
           <Marker
             coordinate={buddyLocation}
-            title="Buddy"
+            title={buddy?.name || "Buddy"}
             pinColor="green"
           />
         )}
 
-        {route && (
-          <Polyline
-            coordinates={route}
-            strokeWidth={4}
-            strokeColor="#007AFF"
-          />
-        )}
       </MapView>
 
-      {/* ETA PANEL */}
+      {/* INFO PANEL */}
       <View style={styles.panel}>
+
+        <Text style={styles.title}>LIVE TRACKING</Text>
+
+        <Text style={styles.text}>
+          👤 {buddy?.name}
+        </Text>
+
         <Text style={styles.text}>
           📍 Distance: {distance} km
         </Text>
@@ -117,47 +116,57 @@ export default function LiveMap({
           ⏱️ ETA: {eta} mins
         </Text>
 
-        {buddyLocation ? (
-          <Text style={styles.live}>
-            🟢 Buddy is moving live
-          </Text>
-        ) : (
-          <Text style={styles.offline}>
-            🔴 Waiting for buddy location...
-          </Text>
-        )}
+        <Text style={styles.status}>
+          🟢 {status === "started" ? "On the way" : "Waiting"}
+        </Text>
+
       </View>
 
-    </View>
+    </SafeAreaView>
   );
 }
 
+/*
+=========================
+STYLES
+=========================
+*/
 const styles = StyleSheet.create({
+
+  container: { flex: 1 },
+  map: { flex: 1 },
+
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center"
+  },
+
   panel: {
     position: "absolute",
-    top: 50,
-    left: 15,
-    right: 15,
+    bottom: 0,
+    left: 0,
+    right: 0,
     backgroundColor: "#fff",
-    padding: 12,
-    borderRadius: 12,
-    elevation: 5
+    padding: 18,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    elevation: 10
+  },
+
+  title: {
+    fontSize: 18,
+    fontWeight: "bold"
   },
 
   text: {
-    fontSize: 14,
-    fontWeight: "600"
+    marginTop: 5,
+    fontSize: 14
   },
 
-  live: {
-    marginTop: 5,
-    color: "green",
-    fontWeight: "700"
-  },
-
-  offline: {
-    marginTop: 5,
-    color: "red",
-    fontWeight: "600"
+  status: {
+    marginTop: 10,
+    fontWeight: "700",
+    color: "green"
   }
 });

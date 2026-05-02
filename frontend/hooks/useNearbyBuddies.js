@@ -2,71 +2,63 @@ import { useEffect, useState, useCallback } from "react";
 import api from "../api/Apiclient";
 
 export default function useNearbyBuddies(
-location,
-category,
-skills,
-interests,
-socket
-){
+  location,
+  category,
+  skills = [],
+  interests = [],
+  socket
+) {
 
-const [buddies,setBuddies] = useState([]);
-const [loading,setLoading] = useState(false);
+  const [buddies, setBuddies] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-const fetchBuddies = useCallback(async()=>{
+  const fetchBuddies = useCallback(async () => {
 
-if(!location) return;
+    if (!location) return;
 
-setLoading(true);
+    setLoading(true);
 
-try{
+    try {
+      const res = await api.get("/user/nearest-buddy", {
+        params: {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          categoryId: category?._id,
+          skillIds: skills.join(","),
+          interestIds: interests.join(",")
+        }
+      });
 
-const res = await api.get(
-"/user/nearest-buddy",
-{
-params:{
-latitude:location.latitude,
-longitude:location.longitude,
-categoryId:category?._id,
-skillIds:skills.join(","),
-interestIds:interests.join(",")
-}
-});
+      setBuddies(res.data.data || []);
 
-setBuddies(res.data.data || []);
+    } catch (e) {}
 
-}catch(e){}
+    setLoading(false);
 
-setLoading(false);
+  }, [location, category, skills, interests]);
 
-},[location,category,skills,interests]);
+  useEffect(() => {
+    fetchBuddies();
+  }, [fetchBuddies]);
 
-useEffect(()=>{
-fetchBuddies();
-},[fetchBuddies]);
+  useEffect(() => {
+    if (!socket) return;
 
+    const handler = (data) => {
+      setBuddies(prev => {
+        if (!data.isOnline) {
+          return prev.filter(b => b._id !== data.buddyId);
+        }
+        fetchBuddies();
+        return prev;
+      });
+    };
 
+    socket.on("buddy_status_updated", handler);
 
-/* realtime online/offline */
-useEffect(()=>{
+    return () => socket.off("buddy_status_updated", handler);
 
-if(!socket) return;
+  }, [socket, fetchBuddies]);
 
-socket.on("buddy_status_updated",(data)=>{
-
-if(!data.isOnline){
-setBuddies(prev =>
-prev.filter(b=>b._id!==data.buddyId)
-);
-}else{
-fetchBuddies();
-}
-
-});
-
-return ()=>socket.off("buddy_status_updated");
-
-},[socket]);
-
-return { buddies, loading, refresh:fetchBuddies };
-
+  return { buddies, loading, refresh: fetchBuddies };
 }

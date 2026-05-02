@@ -1,7 +1,7 @@
 import express from "express";
-import { buddyLoginOtp,buddyLoginPassword,buddyReg } from "../Controllers/auth.js";
+import { buddyLoginOtp,buddyLoginPassword,buddyReg, } from "../Controllers/auth.js";
 import { changePassword } from "../Controllers/auth.js";
-import { toggleOnlineStatus } from "../Controllers/booking.js";
+import { toggleOnlineStatus , getBuddyDashboard } from "../Controllers/booking.js";
 
 import authMiddleware from "../middleware/authMiddleware.js";
 
@@ -25,5 +25,9 @@ buddyRouter.post("/change-password", authMiddleware, changePassword);
 
 //booking enpoins here !!
 buddyRouter.patch('/toggle-status',authMiddleware,toggleOnlineStatus)
+
+
+
+buddyRouter.get('/dashboard',authMiddleware,getBuddyDashboard)
 
 export default buddyRouter;

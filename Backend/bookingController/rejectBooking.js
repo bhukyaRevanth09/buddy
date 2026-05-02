@@ -2,10 +2,12 @@ import instantBookingModel from "../models/instantBooking.js";
 import buddyModel from "../models/BuddySchema.js";
 import redis from "../Config/redis.js";
 import { getIO } from "../services/Socket.js";
+import { unlockBuddy } from "../utils/bookingLock.js"; // 👈 IMPORTANT FIX
 
 export const cancelBooking = async (req, res, next) => {
   try {
     const io = getIO();
+
     const { bookingId, reason } = req.body;
     const userId = req.user.id;
     const role = req.user.role;
@@ -28,10 +30,9 @@ export const cancelBooking = async (req, res, next) => {
 
     /*
     =========================
-    UPDATE STATUS
+    UPDATE BOOKING
     =========================
     */
-
     booking.status = "cancelled";
     booking.cancelledAt = new Date();
 
@@ -44,32 +45,32 @@ export const cancelBooking = async (req, res, next) => {
 
     /*
     =========================
-    STOP AUTO ASSIGN
+    STOP REDIS FLOW
     =========================
     */
-
     await redis.del(`pending_booking:${bookingId}`);
 
     /*
     =========================
-    FREE BUDDY
+    FREE BUDDY + UNLOCK
     =========================
     */
-
     if (booking.buddy) {
       await buddyModel.findByIdAndUpdate(booking.buddy, {
         availabilityStatus: "available",
         currentBooking: null
       });
+
+      // 🔥 IMPORTANT: release lock
+      await unlockBuddy(booking.buddy.toString());
     }
 
     /*
     =========================
-    NOTIFY USER
+    USER NOTIFICATION
     =========================
     */
-
-    io.to(booking.user.toString()).emit("booking-cancelled", {
+    io.to(booking.user.toString()).emit("booking_cancelled", {
       bookingId,
       cancelledBy: role,
       reason: booking.cancellation.reason
@@ -77,12 +78,11 @@ export const cancelBooking = async (req, res, next) => {
 
     /*
     =========================
-    NOTIFY BUDDY
+    BUDDY NOTIFICATION
     =========================
     */
-
     if (booking.buddy) {
-      io.to(booking.buddy.toString()).emit("booking-cancelled", {
+      io.to(`buddy:${booking.buddy.toString()}`).emit("booking_cancelled", {
         bookingId,
         cancelledBy: role,
         reason: booking.cancellation.reason
@@ -91,15 +91,19 @@ export const cancelBooking = async (req, res, next) => {
 
     /*
     =========================
-    STOP TRACKING
+    STOP TRACKING ROOM
     =========================
     */
+    io.to(`booking:${bookingId}`).emit("booking_status_update", {
+      bookingId,
+      status: "cancelled"
+    });
 
-    io.to(`booking:${bookingId}`).emit("tracking-ended", {
+    io.to(`booking:${bookingId}`).emit("tracking_ended", {
       bookingId
     });
 
-    res.json({
+    return res.json({
       success: true,
       message: "Booking cancelled"
     });
