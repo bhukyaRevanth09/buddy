@@ -6,7 +6,7 @@ import skillModel from "../models/SkillStore.js";
 import buddyModel from "../models/BuddySchema.js";
 import mongoose from 'mongoose';
 import redis from "../Config/redis.js";
-import { getIO } from "../services/Socket.js";
+import { getIO } from "../socket/socket.js";
 
 
 //  instant booking

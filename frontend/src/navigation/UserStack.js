@@ -5,7 +5,7 @@ import MatchingScreen from "../screens/user/MatchingScreen";
 import TrackingScreen from "../screens/user/TrackingScreen";
 import SelectLocationScreen from "../components/map/SelectLocationScreen";
 import ForgotPasswordScreen from "../components/ForgotPassword";
-
+import ArrivedScreen from "../screens/user/ArrivedScreen";
 const Stack = createNativeStackNavigator();
 
 export default function UserStack() {
@@ -30,6 +30,12 @@ export default function UserStack() {
         component={ForgotPasswordScreen}
       />
 
+
+ <Stack.Screen
+  name="Arrived"
+   component={ArrivedScreen} 
+   />
+   
     </Stack.Navigator>
   );
 }

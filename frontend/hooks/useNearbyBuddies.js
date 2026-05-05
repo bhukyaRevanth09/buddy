@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import api from "../api/Apiclient";
+import { SOCKET_EVENTS } from "../evenets/frontendsocketEvents";
 
 export default function useNearbyBuddies(
   location,
@@ -19,19 +20,27 @@ export default function useNearbyBuddies(
     setLoading(true);
 
     try {
-      const res = await api.get("/user/nearest-buddy", {
-        params: {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          categoryId: category?._id,
-          skillIds: skills.join(","),
-          interestIds: interests.join(",")
+
+      const res = await api.get(
+        "/user/nearest-buddy",
+        {
+          params: {
+            latitude: location.latitude,
+            longitude: location.longitude,
+            categoryId: category?._id,
+            skillIds: skills.join(","),
+            interestIds: interests.join(",")
+          }
         }
-      });
+      );
 
       setBuddies(res.data.data || []);
 
-    } catch (e) {}
+    } catch (e) {
+
+      console.log(e);
+
+    }
 
     setLoading(false);
 
@@ -42,23 +51,47 @@ export default function useNearbyBuddies(
   }, [fetchBuddies]);
 
   useEffect(() => {
+
     if (!socket) return;
 
     const handler = (data) => {
+
       setBuddies(prev => {
+
         if (!data.isOnline) {
-          return prev.filter(b => b._id !== data.buddyId);
+          return prev.filter(
+            b => b._id !== data.buddyId
+          );
         }
+
         fetchBuddies();
+
         return prev;
+
       });
+
     };
 
-    socket.on("buddy_status_updated", handler);
+    socket.on(
+      SOCKET_EVENTS.STATUS_UPDATE,
+      handler
+    );
 
-    return () => socket.off("buddy_status_updated", handler);
+    return () => {
+
+      socket.off(
+        SOCKET_EVENTS.STATUS_UPDATE,
+        handler
+      );
+
+    };
 
   }, [socket, fetchBuddies]);
 
-  return { buddies, loading, refresh: fetchBuddies };
+  return {
+    buddies,
+    loading,
+    refresh: fetchBuddies
+  };
+
 }

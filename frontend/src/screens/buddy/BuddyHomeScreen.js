@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useContext, useCallback } from "react";
+import React, { useEffect, useState, useContext } from "react";
 import {
   View,
   Text,
@@ -16,10 +16,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../../context/AuthContext.js";
 import { SocketContext } from "../../context/socketContext.js";
 import api from "../../api/Apiclient.js";
-import { useBuddySocket } from "../../../hooks/buddySocket.js";
+import { SOCKET_EVENTS } from "../../../evenets/frontendsocketEvents.js";
+import { useBuddySocket } from "../../../hooks/useBuddySocket.js";
 
 export default function BuddyHome({ navigation }) {
-
   const { user, logout } = useAuth();
   const { socket } = useContext(SocketContext);
 
@@ -30,12 +30,12 @@ export default function BuddyHome({ navigation }) {
 
   const [stats, setStats] = useState({
     completedJobs: 0,
-    rating: 0.0
+    rating: 0
   });
 
   /*
   ======================
-  SOCKET HANDLER
+  SOCKET HOOK
   ======================
   */
   useBuddySocket({
@@ -50,47 +50,53 @@ export default function BuddyHome({ navigation }) {
   ======================
   */
   useEffect(() => {
-    (async () => {
+    const loadDashboard = async () => {
       try {
         const res = await api.get("/buddy/dashboard");
+
+        console.log("📊 DASHBOARD RESPONSE:", res.data);
 
         if (res.data.success) {
           setStats(res.data.data);
           setIsOnline(res.data.data?.isOnline || false);
-          console.log("reahceeed ::",res.data.data)
-          // ✅ restore active job if exists
+
           if (res.data.data?.activeBooking) {
             setActiveBooking(res.data.data.activeBooking);
           }
         }
-      } catch (e) {
-        console.log(e);
+      } catch (err) {
+        console.log("❌ DASHBOARD ERROR:", err?.response?.data || err.message);
       } finally {
         setLoading(false);
       }
-    })();
+    };
+
+    loadDashboard();
   }, []);
 
   /*
   ======================
-  TOGGLE STATUS (SAFE)
+  TOGGLE STATUS
   ======================
   */
   const toggleStatus = async () => {
     try {
       const newStatus = !isOnline;
-
       setIsOnline(newStatus);
 
-      socket?.emit("buddy:status", { isOnline: newStatus });
+      console.log("🔄 STATUS UPDATE:", newStatus);
+
+      socket?.emit(SOCKET_EVENTS.STATUS_UPDATE, {
+        isOnline: newStatus
+      });
 
       await api.patch("/buddy/toggle-status", {
         status: newStatus ? "available" : "offline"
       });
-
-    } catch {
-      setIsOnline(prev => !prev);
-      Alert.alert("Error updating status");
+    } catch (err) {
+      console.log("❌ STATUS ERROR:", err?.response?.data || err.message);
+      setIsOnline((prev) => !prev);
+      Alert.alert("Error", "Failed to update status");
     }
   };
 
@@ -99,45 +105,61 @@ export default function BuddyHome({ navigation }) {
   ACCEPT BOOKING
   ======================
   */
-  const handleAccept = async () => {
-    if (!incomingRequest) return;
+const handleAccept = async () => {
+  if (!incomingRequest) return;
 
-    try {
-      const res = await api.post("/booking/accept", {
-        bookingId: incomingRequest.bookingId
+  try {
+    const requestToAccept = incomingRequest;
+
+    // ✅ close popup immediately
+    setIncomingRequest(null);
+
+    const res = await api.post("/booking/accept", {
+      bookingId: requestToAccept.bookingId
+    });
+
+    if (res.data.success) {
+      const realBookingId = res.data.bookingId || requestToAccept.bookingId;
+
+      const bookingData = {
+        ...requestToAccept,
+        bookingId: realBookingId,
+        _id: realBookingId,
+        status: "accepted",
+        pickupLocation: requestToAccept.pickupLocation
+      };
+
+      setActiveBooking(bookingData);
+
+      socket?.emit(SOCKET_EVENTS.BOOKING_JOIN, {
+        bookingId: realBookingId
       });
 
-      if (res.data.success) {
-        const bookingData = {
-          bookingId: incomingRequest.bookingId,
-          ...incomingRequest
-        };
-
-        setActiveBooking(bookingData);
-        setIncomingRequest(null);
-
-        navigation.navigate("ActiveJob", {
-          booking: bookingData
-        });
-      }
-
-    } catch {
-      Alert.alert("Already taken");
-      setIncomingRequest(null);
+      navigation.navigate("ActiveJob", {
+        booking: bookingData
+      });
     }
-  };
-
+  } catch (err) {
+    console.log("❌ ACCEPT ERROR:", err?.response?.data || err.message);
+    setIncomingRequest(null);
+    Alert.alert("Error", err?.response?.data?.message || "Accept failed");
+  }
+};
   /*
   ======================
-  REJECT (NEW)
+  REJECT BOOKING
   ======================
   */
   const handleReject = () => {
-    setIncomingRequest(null);
+    if (!incomingRequest) return;
 
-    socket?.emit("booking:reject", {
-      bookingId: incomingRequest?.bookingId
+    console.log("❌ REJECT BOOKING:", incomingRequest.bookingId);
+
+    socket?.emit(SOCKET_EVENTS.BOOKING_REJECTED, {
+      bookingId: incomingRequest.bookingId
     });
+
+    setIncomingRequest(null);
   };
 
   /*
@@ -162,10 +184,7 @@ export default function BuddyHome({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-
       <ScrollView showsVerticalScrollIndicator={false}>
-
-        {/* HEADER */}
         <View style={styles.header}>
           <View>
             <Text style={styles.name}>Hi, {user?.name}</Text>
@@ -185,10 +204,7 @@ export default function BuddyHome({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* STATS */}
         <View style={styles.statsRow}>
-      
-
           <View style={styles.card}>
             <Text style={styles.cardTitle}>{stats.completedJobs}</Text>
             <Text style={styles.cardSub}>Jobs</Text>
@@ -200,13 +216,16 @@ export default function BuddyHome({ navigation }) {
           </View>
         </View>
 
-        {/* ACTIVE JOB */}
         {activeBooking ? (
           <View style={styles.activeCard}>
             <Text style={styles.sectionTitle}>Active Job</Text>
 
             <Text style={styles.text}>
-              Customer: {activeBooking?.customerName}
+              Customer: {activeBooking?.customerName || "Customer"}
+            </Text>
+
+            <Text style={styles.text}>
+              Booking: {activeBooking?.bookingId || activeBooking?._id}
             </Text>
 
             <TouchableOpacity
@@ -223,25 +242,24 @@ export default function BuddyHome({ navigation }) {
         ) : (
           <View style={styles.waitCard}>
             <Ionicons name="time-outline" size={40} color="#999" />
+
             <Text style={styles.waitText}>
-              {isOnline ? "Waiting for bookings..." : "Go Online to receive jobs"}
+              {isOnline
+                ? "Waiting for bookings..."
+                : "Go Online to receive jobs"}
             </Text>
           </View>
         )}
 
-        {/* LOGOUT */}
         <TouchableOpacity style={styles.logout} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={20} color="red" />
           <Text style={{ color: "red", marginLeft: 5 }}>Logout</Text>
         </TouchableOpacity>
-
       </ScrollView>
 
-      {/* REQUEST MODAL */}
       <Modal visible={!!incomingRequest} transparent animationType="fade">
         <View style={styles.modal}>
           <View style={styles.modalCard}>
-
             <Text style={styles.modalTitle}>New Booking Request</Text>
 
             <Text style={styles.modalText}>
@@ -252,8 +270,17 @@ export default function BuddyHome({ navigation }) {
               🚗 {incomingRequest?.distance} km away
             </Text>
 
-            <View style={{ flexDirection: "row", marginTop: 15 }}>
+            <Text style={styles.modalText}>
+              📦 Booking: {incomingRequest?.bookingId}
+            </Text>
 
+            {!incomingRequest?.pickupLocation && (
+              <Text style={{ color: "red", marginTop: 8 }}>
+                ⚠️ Customer location missing
+              </Text>
+            )}
+
+            <View style={{ flexDirection: "row", marginTop: 15 }}>
               <TouchableOpacity
                 style={[styles.acceptBtn, { flex: 1 }]}
                 onPress={handleAccept}
@@ -267,23 +294,15 @@ export default function BuddyHome({ navigation }) {
               >
                 <Text style={styles.rejectText}>REJECT</Text>
               </TouchableOpacity>
-
             </View>
-
           </View>
         </View>
       </Modal>
-
     </SafeAreaView>
   );
 }
-/*
-======================
-STYLES (CLEAN UI)
-======================
-*/
-const styles = StyleSheet.create({
 
+const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F6F7FB",
@@ -363,7 +382,8 @@ const styles = StyleSheet.create({
   },
 
   text: {
-    color: "#555"
+    color: "#555",
+    marginTop: 4
   },
 
   goBtn: {
@@ -429,6 +449,19 @@ const styles = StyleSheet.create({
   },
 
   acceptText: {
+    color: "#fff",
+    textAlign: "center",
+    fontWeight: "bold"
+  },
+
+  rejectBtn: {
+    marginTop: 15,
+    backgroundColor: "#FF3B30",
+    padding: 12,
+    borderRadius: 10
+  },
+
+  rejectText: {
     color: "#fff",
     textAlign: "center",
     fontWeight: "bold"

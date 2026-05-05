@@ -1,201 +1,776 @@
-import React, { createContext, useEffect, useRef, useState } from "react";
+/*
+==========================================================
+FRONTEND SOCKET CONTEXT
+FILE:
+src/context/socketContext.js
+==========================================================
+*/
+
+import React, {
+  createContext,
+  useEffect,
+  useRef,
+  useState,
+  useCallback
+} from "react";
+
+import { AppState } from "react-native";
+
 import { io } from "socket.io-client";
+
 import * as SecureStore from "expo-secure-store";
+
 import axios from "axios";
 
-export const SocketContext = createContext();
+import { SOCKET_EVENTS } from "../../evenets/frontendsocketEvents";
 
-export const SocketProvider = ({ children }) => {
+export const SocketContext =
+  createContext();
+
+/*
+==========================================================
+CONFIG
+==========================================================
+*/
+
+const SOCKET_URL =
+  "http://192.168.0.109:9090";
+
+const API_URL =
+  "http://192.168.0.109:9090/api";
+
+/*
+==========================================================
+SOCKET PROVIDER
+==========================================================
+*/
+
+export const SocketProvider = ({
+  children
+}) => {
+
   const socketRef = useRef(null);
 
-  const [socket, setSocket] = useState(null);
-  const [isConnected, setIsConnected] = useState(false);
+  const appState = useRef(
+    AppState.currentState
+  );
+
+  const reconnectTimeout =
+    useRef(null);
+
+  const [socket, setSocket] =
+    useState(null);
+
+  const [connected, setConnected] =
+    useState(false);
+
+  const [loading, setLoading] =
+    useState(true);
 
   /*
-  ============================
-  GET TOKEN (SAFE)
-  ============================
+  ==========================================================
+  GET ACCESS TOKEN
+  ==========================================================
   */
-  const getToken = async () => {
-    let token = await SecureStore.getItemAsync("accessToken");
-    if (!token) return null;
 
-    return token.replace("Bearer ", "").trim();
-  };
+  const getAccessToken =
+    async () => {
+
+      try {
+
+        const token =
+          await SecureStore.getItemAsync(
+            "accessToken"
+          );
+
+        if (!token) {
+
+          console.log(
+            "❌ ACCESS TOKEN NOT FOUND"
+          );
+
+          return null;
+        }
+
+        return token.startsWith(
+          "Bearer "
+        )
+          ? token.replace(
+              "Bearer ",
+              ""
+            )
+          : token;
+
+      } catch (err) {
+
+        console.log(
+          "❌ GET ACCESS TOKEN ERROR"
+        );
+
+        console.log(err);
+
+        return null;
+      }
+    };
 
   /*
-  ============================
-  REFRESH TOKEN
-  ============================
+  ==========================================================
+  GET REFRESH TOKEN
+  ==========================================================
   */
-  const refreshToken = async () => {
-    try {
-      const refreshToken = await SecureStore.getItemAsync("refreshToken");
-      if (!refreshToken) return null;
 
-      const res = await axios.post(
-        "http://10.0.0.14:9090/api/auth/refresh-token",
-        { refreshToken }
+  const getRefreshToken =
+    async () => {
+
+      try {
+
+        const token =
+          await SecureStore.getItemAsync(
+            "refreshToken"
+          );
+
+        if (!token) {
+
+          console.log(
+            "❌ REFRESH TOKEN NOT FOUND"
+          );
+
+          return null;
+        }
+
+        return token;
+
+      } catch (err) {
+
+        console.log(
+          "❌ GET REFRESH TOKEN ERROR"
+        );
+
+        console.log(err);
+
+        return null;
+      }
+    };
+
+  /*
+  ==========================================================
+  REFRESH ACCESS TOKEN
+  ==========================================================
+  */
+
+  const refreshAccessToken =
+    async () => {
+
+      try {
+
+        console.log("\n================================");
+
+        console.log(
+          "🔄 REFRESHING ACCESS TOKEN"
+        );
+
+        console.log(
+          "================================"
+        );
+
+        const refreshToken =
+          await getRefreshToken();
+
+        if (!refreshToken) {
+
+          return null;
+        }
+
+        const response =
+          await axios.post(
+            `${API_URL}/auth/refresh-token`,
+            {
+              refreshToken
+            }
+          );
+
+        const newAccessToken =
+          response.data?.accessToken;
+
+        if (!newAccessToken) {
+
+          console.log(
+            "❌ NEW ACCESS TOKEN NOT RECEIVED"
+          );
+
+          return null;
+        }
+
+        await SecureStore.setItemAsync(
+          "accessToken",
+          `Bearer ${newAccessToken}`
+        );
+
+        console.log(
+          "✅ ACCESS TOKEN REFRESHED"
+        );
+
+        return newAccessToken;
+
+      } catch (err) {
+
+        console.log(
+          "❌ REFRESH TOKEN ERROR"
+        );
+
+        console.log(
+          err?.response?.data ||
+            err?.message
+        );
+
+        return null;
+      }
+    };
+
+  /*
+  ==========================================================
+  DISCONNECT SOCKET
+  ==========================================================
+  */
+
+  const disconnectSocket =
+    useCallback(() => {
+
+      try {
+
+        console.log("\n================================");
+
+        console.log(
+          "🔌 SOCKET DISCONNECT"
+        );
+
+        console.log(
+          "================================"
+        );
+
+        if (socketRef.current) {
+
+          socketRef.current.removeAllListeners();
+
+          socketRef.current.disconnect();
+
+          socketRef.current = null;
+        }
+
+        setSocket(null);
+
+        setConnected(false);
+
+      } catch (err) {
+
+        console.log(
+          "❌ DISCONNECT ERROR"
+        );
+
+        console.log(err);
+      }
+
+    }, []);
+
+  /*
+  ==========================================================
+  CREATE SOCKET
+  ==========================================================
+  */
+
+  const createSocket =
+    async (token) => {
+
+      try {
+
+        console.log("\n================================");
+
+        console.log(
+          "🚀 CREATE SOCKET"
+        );
+
+        console.log(
+          "================================"
+        );
+
+        const newSocket = io(
+          SOCKET_URL,
+          {
+
+            transports: [
+              "websocket"
+            ],
+
+            auth: {
+              token
+            },
+
+            autoConnect: true,
+
+            forceNew: true,
+
+            reconnection: true,
+
+            reconnectionAttempts:
+              Infinity,
+
+            reconnectionDelay: 2000,
+
+            reconnectionDelayMax: 10000,
+
+            timeout: 20000
+          }
+        );
+
+        /*
+        ======================================================
+        CONNECT
+        ======================================================
+        */
+
+        newSocket.on(
+          "connect",
+          () => {
+
+            console.log("\n================================");
+
+            console.log(
+              "🟢 SOCKET CONNECTED"
+            );
+
+            console.log(
+              "🧩 SOCKET ID:",
+              newSocket.id
+            );
+
+            console.log(
+              "================================"
+            );
+
+            setConnected(true);
+
+            setLoading(false);
+          }
+        );
+
+        /*
+        ======================================================
+        READY
+        ======================================================
+        */
+
+        newSocket.on(
+          SOCKET_EVENTS.CONNECTION_READY,
+          (data) => {
+
+            console.log(
+              "✅ CONNECTION READY"
+            );
+
+            console.log(data);
+          }
+        );
+
+        /*
+        ======================================================
+        LOCATION UPDATE
+        ======================================================
+        */
+
+        newSocket.on(
+          SOCKET_EVENTS.LOCATION_UPDATE,
+          (data) => {
+
+            console.log(
+              "\n📍 LIVE LOCATION UPDATE"
+            );
+
+            console.log(data);
+          }
+        );
+
+        /*
+        ======================================================
+        BOOKING ACCEPTED
+        ======================================================
+        */
+
+        newSocket.on(
+          SOCKET_EVENTS.BOOKING_ACCEPTED,
+          (data) => {
+
+            console.log(
+              "\n✅ BOOKING ACCEPTED"
+            );
+
+            console.log(data);
+          }
+        );
+
+        /*
+        ======================================================
+        BUDDY ARRIVED
+        ======================================================
+        */
+
+        newSocket.on(
+          SOCKET_EVENTS.BUDDY_ARRIVED,
+          (data) => {
+
+            console.log(
+              "\n🚶 BUDDY ARRIVED"
+            );
+
+            console.log(data);
+          }
+        );
+
+        /*
+        ======================================================
+        OTP
+        ======================================================
+        */
+
+        newSocket.on(
+          SOCKET_EVENTS.OTP_GENERATED,
+          (data) => {
+
+            console.log(
+              "\n🔐 OTP GENERATED"
+            );
+
+            console.log(data);
+          }
+        );
+
+        /*
+        ======================================================
+        DISCONNECT
+        ======================================================
+        */
+
+        newSocket.on(
+          "disconnect",
+          (reason) => {
+
+            console.log("\n================================");
+
+            console.log(
+              "🔴 SOCKET DISCONNECTED"
+            );
+
+            console.log(
+              "📄 REASON:",
+              reason
+            );
+
+            console.log(
+              "================================"
+            );
+
+            setConnected(false);
+
+            /*
+            ============================================
+            TOKEN EXPIRED
+            ============================================
+            */
+
+            if (
+              reason ===
+              "io server disconnect"
+            ) {
+
+              console.log(
+                "⚠️ SERVER DISCONNECTED SOCKET"
+              );
+            }
+          }
+        );
+
+        /*
+        ======================================================
+        CONNECT ERROR
+        ======================================================
+        */
+
+        newSocket.on(
+          "connect_error",
+          async (err) => {
+
+            console.log("\n================================");
+
+            console.log(
+              "❌ SOCKET CONNECT ERROR"
+            );
+
+            console.log(
+              err?.message
+            );
+
+            console.log(
+              "================================"
+            );
+
+            setConnected(false);
+
+            /*
+            ============================================
+            TOKEN EXPIRED
+            ============================================
+            */
+
+            if (
+              err?.message ===
+              "Unauthorized"
+            ) {
+
+              console.log(
+                "🔄 TRYING TOKEN REFRESH"
+              );
+
+              const newToken =
+                await refreshAccessToken();
+
+              if (newToken) {
+
+                disconnectSocket();
+
+                setTimeout(() => {
+
+                  connectSocket();
+
+                }, 1500);
+
+              }
+            }
+          }
+        );
+
+        /*
+        ======================================================
+        RECONNECT ATTEMPT
+        ======================================================
+        */
+
+        newSocket.io.on(
+          "reconnect_attempt",
+          (attempt) => {
+
+            console.log(
+              `🟡 RECONNECT ATTEMPT ${attempt}`
+            );
+          }
+        );
+
+        /*
+        ======================================================
+        RECONNECTED
+        ======================================================
+        */
+
+        newSocket.io.on(
+          "reconnect",
+          (attempt) => {
+
+            console.log(
+              `🟢 RECONNECTED (${attempt})`
+            );
+          }
+        );
+
+        /*
+        ======================================================
+        SAVE SOCKET
+        ======================================================
+        */
+
+        socketRef.current =
+          newSocket;
+
+        setSocket(newSocket);
+
+      } catch (err) {
+
+        console.log(
+          "❌ CREATE SOCKET ERROR"
+        );
+
+        console.log(err);
+
+        setLoading(false);
+      }
+    };
+
+  /*
+  ==========================================================
+  CONNECT SOCKET
+  ==========================================================
+  */
+
+  const connectSocket =
+    useCallback(async () => {
+
+      try {
+
+        setLoading(true);
+
+        const token =
+          await getAccessToken();
+
+        if (!token) {
+
+          const newToken =
+            await refreshAccessToken();
+
+          if (!newToken) {
+
+            setLoading(false);
+
+            return;
+          }
+
+          await createSocket(
+            newToken
+          );
+
+          return;
+        }
+
+        if (socketRef.current?.connected) {
+
+          console.log(
+            "⚠️ SOCKET ALREADY CONNECTED"
+          );
+
+          setLoading(false);
+
+          return;
+        }
+
+        disconnectSocket();
+
+        await createSocket(token);
+
+      } catch (err) {
+
+        console.log(
+          "❌ CONNECT SOCKET ERROR"
+        );
+
+        console.log(err);
+
+        setLoading(false);
+      }
+
+    }, [disconnectSocket]);
+
+  /*
+  ==========================================================
+  APP STATE LISTENER
+  ==========================================================
+  */
+
+  useEffect(() => {
+
+    const subscription =
+      AppState.addEventListener(
+        "change",
+        async (nextState) => {
+
+          console.log(
+            `📱 APP STATE: ${nextState}`
+          );
+
+          /*
+          ======================================
+          APP ACTIVE
+          ======================================
+          */
+
+          if (
+            appState.current.match(
+              /inactive|background/
+            ) &&
+            nextState === "active"
+          ) {
+
+            console.log(
+              "🟢 APP ACTIVE AGAIN"
+            );
+
+            if (
+              !socketRef.current
+                ?.connected
+            ) {
+
+              await connectSocket();
+            }
+          }
+
+          appState.current =
+            nextState;
+        }
       );
 
-      let newToken = res.data.accessToken;
-      if (!newToken) return null;
+    return () =>
+      subscription.remove();
 
-      newToken = newToken.replace("Bearer ", "").trim();
-
-      await SecureStore.setItemAsync("accessToken", newToken);
-
-      return newToken;
-    } catch (err) {
-      console.log("❌ Refresh failed");
-      return null;
-    }
-  };
+  }, [connectSocket]);
 
   /*
-  ============================
-  CONNECT SOCKET
-  ============================
+  ==========================================================
+  INITIAL CONNECT
+  ==========================================================
   */
-  const connectSocket = async (passedToken = null) => {
-    const token = passedToken || (await getToken());
 
-    if (!token) {
-      console.log("❌ No token → skip socket");
-      return;
-    }
-
-    // disconnect old
-    if (socketRef.current) {
-      socketRef.current.disconnect();
-    }
-
-    console.log("🔌 Connecting socket with token:", token);
-
-    const newSocket = io("http://10.0.0.14:9090", {
-      transports: ["websocket"],
-      auth: { token }
-    });
-
-    /*
-    ============================
-    CONNECT SUCCESS
-    ============================
-    */
-    newSocket.on("connect", async () => {
-      console.log("🟢 Socket Connected");
-
-      setIsConnected(true);
-
-      const userId = await SecureStore.getItemAsync("userId");
-      const role = await SecureStore.getItemAsync("role");
-
-      if (userId) {
-        newSocket.emit("join_user_room", userId);
-      }
-
-      if (role === "buddy" && userId) {
-        newSocket.emit("join_buddy_room", userId);
-      }
-    });
-
-    /*
-    ============================
-    ERROR HANDLING (FIXED)
-    ============================
-    */
-    newSocket.on("connect_error", async (err) => {
-      console.log("❌ Socket error:", err.message);
-
-      if (err.message === "AUTH_FAILED" || err.message === "NO_TOKEN") {
-        console.log("♻️ Refreshing token...");
-
-        const newToken = await refreshToken();
-
-        if (newToken) {
-          console.log("✅ Reconnecting with new token...");
-          connectSocket(newToken);
-        } else {
-          console.log("❌ Refresh failed → logout needed");
-        }
-      }
-
-      setIsConnected(false);
-    });
-
-    newSocket.on("disconnect", () => {
-      console.log("🔴 Socket disconnected");
-      setIsConnected(false);
-    });
-
-    socketRef.current = newSocket;
-    setSocket(newSocket);
-  };
-
-  /*
-  ============================
-  DISCONNECT
-  ============================
-  */
-  const disconnectSocket = () => {
-    if (socketRef.current) {
-      socketRef.current.disconnect();
-      socketRef.current = null;
-      setSocket(null);
-    }
-  };
-
-  /*
-  ============================
-  RECONNECT
-  ============================
-  */
-  const reconnectSocket = async () => {
-    console.log("♻️ Manual reconnect...");
-    disconnectSocket();
-
-    const token = await getToken();
-    if (token) connectSocket(token);
-  };
-
-  /*
-  ============================
-  INIT (SAFE TIMING)
-  ============================
-  */
   useEffect(() => {
-    let mounted = true;
 
-    const init = async () => {
-      const token = await getToken();
-
-      if (mounted && token) {
-        connectSocket(token);
-      } else {
-        console.log("⏳ Waiting for token...");
-      }
-    };
-
-    init();
-
-    global.socketReconnect = reconnectSocket;
+    connectSocket();
 
     return () => {
-      mounted = false;
+
       disconnectSocket();
+
+      if (
+        reconnectTimeout.current
+      ) {
+
+        clearTimeout(
+          reconnectTimeout.current
+        );
+      }
     };
+
   }, []);
 
+  /*
+  ==========================================================
+  CONTEXT
+  ==========================================================
+  */
+
   return (
+
     <SocketContext.Provider
       value={{
+
         socket,
-        isConnected,
-        reconnectSocket,
-        disconnectSocket,
+
+        connected,
+
+        loading,
+
+        reconnect:
+          connectSocket,
+
+        disconnect:
+          disconnectSocket
       }}
     >
+
       {children}
+
     </SocketContext.Provider>
   );
 };

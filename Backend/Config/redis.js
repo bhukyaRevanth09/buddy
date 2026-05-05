@@ -1,19 +1,22 @@
-// config/redis.js
 import IORedis from "ioredis";
 
 const redis = new IORedis({
-  host: "127.0.0.1",
-  port: 6379,
+  host: process.env.REDIS_HOST || "127.0.0.1",
+  port: process.env.REDIS_PORT || 6379,
   maxRetriesPerRequest: null,
+  enableReadyCheck: true,
+
+  retryStrategy(times) {
+    return Math.min(times * 50, 2000);
+  }
 });
 
-//  check connection
 redis.on("connect", () => {
-  console.log(" Redis Connected");
+  console.log("✅ Redis Connected");
 });
 
 redis.on("error", (err) => {
-  console.log(" Redis Error:", err);
+  console.log("❌ Redis Error:", err.message);
 });
 
 export default redis;

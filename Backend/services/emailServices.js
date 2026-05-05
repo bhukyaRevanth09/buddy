@@ -1,7 +1,13 @@
 // services/emailService.js
 import nodemailer from "nodemailer";
 
-export const sendEmail = async (email, otp) => {
+export const sendEmail = async ({
+  email,
+  otp,
+  subject = "OTP Code",
+  title = "Your OTP",
+  message = "Use the OTP below",
+}) => {
   try {
     const transporter = nodemailer.createTransport({
       service: "gmail",
@@ -12,9 +18,9 @@ export const sendEmail = async (email, otp) => {
     });
 
     const mailOptions = {
-      from: `"Buddy App" <${process.env.MY_EMAIL}>`, // ✅ hides raw gmail
+      from: `"Buddy App" <${process.env.MY_EMAIL}>`,
       to: email,
-      subject: "Verify your email - OTP Code",
+      subject,
       html: `
       <div style="font-family: Arial, sans-serif; background:#f4f6f8; padding:40px 0;">
         <div style="max-width:500px; margin:auto; background:white; border-radius:12px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.05);">
@@ -24,9 +30,9 @@ export const sendEmail = async (email, otp) => {
           </div>
 
           <div style="padding:30px; text-align:center;">
-            <h2 style="margin-bottom:10px;">Verify your email</h2>
+            <h2 style="margin-bottom:10px;">${title}</h2>
             <p style="color:#666; font-size:14px;">
-              Use the OTP below to complete your verification
+              ${message}
             </p>
 
             <div style="
@@ -49,7 +55,7 @@ export const sendEmail = async (email, otp) => {
           </div>
 
           <div style="background:#f7f7f7; padding:15px; text-align:center; font-size:12px; color:#888;">
-            © ${new Date().getFullYear()} Buddy App. All rights reserved.
+            © ${new Date().getFullYear()} Buddy App
           </div>
 
         </div>

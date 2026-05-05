@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useContext } from "react";
+import React, { useEffect, useState, useContext, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,7 +6,9 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Image,
-  Alert
+  Alert,
+  ScrollView,
+  RefreshControl
 } from "react-native";
 
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -16,201 +18,268 @@ import api from "../../api/Apiclient.js";
 import { SocketContext } from "../../context/socketContext.js";
 
 export default function BookingScreen({ navigation }) {
-
   const { socket } = useContext(SocketContext);
 
-  const [booking, setBooking] = useState(null);
+  const [currentBooking, setCurrentBooking] = useState(null);
+  const [finishedBookings, setFinishedBookings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  /*
-  ==============================
-  GET ACTIVE BOOKING
-  ==============================
-  */
-  const fetchBooking = async () => {
+  const getBookingId = (booking) =>
+    booking?._id || booking?.bookingId || booking?.id;
+
+  const getUserLocation = (booking) =>
+    booking?.pickupLocation ||
+    booking?.location ||
+    booking?.userLocation ||
+    booking?.address?.location ||
+    null;
+
+  const fetchBookings = async () => {
     try {
-      const res = await api.get("/booking/active");
+      const [activeRes, historyRes] = await Promise.all([
+        api.get("/booking/active"),
+        api.get("/booking/history")
+      ]);
 
-      if (res.data.success && res.data.data) {
-        const data = res.data.data;
-        setBooking(data);
+      console.log("📦 ACTIVE BOOKING:", activeRes.data);
+      console.log("📚 BOOKING HISTORY:", historyRes.data);
 
-        // join booking room (REAL-TIME TRACKING)
-        socket?.emit("join_booking_room", data._id);
+      if (activeRes?.data?.success && activeRes?.data?.data) {
+        const active = activeRes.data.data;
+        setCurrentBooking(active);
+
+        socket?.emit("booking:join", {
+          bookingId: getBookingId(active)
+        });
       } else {
-        setBooking(null);
+        setCurrentBooking(null);
       }
 
+      if (historyRes?.data?.success) {
+        setFinishedBookings(historyRes.data.data || []);
+      } else {
+        setFinishedBookings([]);
+      }
     } catch (err) {
-      console.log("No active booking");
-      setBooking(null);
+      console.log("❌ Booking fetch error:", err?.response?.data || err.message);
+      setCurrentBooking(null);
+      setFinishedBookings([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
   useEffect(() => {
-    fetchBooking();
+    fetchBookings();
   }, []);
 
-  /*
-  ==============================
-  SOCKET LISTENERS (MATCHED WITH BACKEND)
-  ==============================
-  */
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchBookings();
+  }, []);
+
   useEffect(() => {
     if (!socket) return;
 
-    /*
-    LIVE TRACKING START
-    */
-    const onTrackingStarted = (data) => {
-      console.log("Tracking started:", data);
-      // you can update UI state here if needed
+    const refresh = (data) => {
+      console.log("🔄 Booking refresh event:", data);
+      fetchBookings();
     };
 
-    /*
-    LIVE LOCATION UPDATE
-    */
-    const onLocationUpdate = (data) => {
-      console.log("Live location:", data);
-      // optional: update map screen if you use it
-    };
-
-    socket.on("tracking_started", onTrackingStarted);
-    socket.on("update_location", onLocationUpdate);
+    socket.on("work:completed", refresh);
+    socket.on("booking:cancelled", refresh);
+    socket.on("booking:accepted", refresh);
+    socket.on("booking:status_update", refresh);
 
     return () => {
-      socket.off("tracking_started", onTrackingStarted);
-      socket.off("update_location", onLocationUpdate);
+      socket.off("work:completed", refresh);
+      socket.off("booking:cancelled", refresh);
+      socket.off("booking:accepted", refresh);
+      socket.off("booking:status_update", refresh);
     };
-
   }, [socket]);
 
-  /*
-  ==============================
-  CANCEL BOOKING
-  ==============================
-  */
-  const cancelBooking = async () => {
-    try {
-      await api.post("/booking/cancel", {
-        bookingId: booking?._id
-      });
+  const openCurrentBooking = () => {
+    if (!currentBooking) return;
 
-      setBooking(null);
-      Alert.alert("Booking cancelled");
+    const userLocation = getUserLocation(currentBooking);
 
-    } catch (err) {
-      Alert.alert("Cancel failed");
+    if (!userLocation) {
+      Alert.alert(
+        "Location missing",
+        "Booking location is missing. Please refresh or create booking again."
+      );
+      return;
     }
+
+    navigation.navigate("Tracking", {
+      bookingId: getBookingId(currentBooking),
+      buddy: currentBooking?.buddy,
+      userLocation
+    });
   };
 
-  /*
-  ==============================
-  LOADING
-  ==============================
-  */
-  if (loading) {
+  const openFinishedBooking = (booking) => {
+    navigation.navigate("BookingDetails", {
+      booking
+    });
+  };
+
+  const cancelBooking = async () => {
+    if (!currentBooking) return;
+
+    Alert.alert("Cancel Booking", "Are you sure you want to cancel?", [
+      { text: "No" },
+      {
+        text: "Yes, Cancel",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await api.post("/booking/cancel", {
+              bookingId: getBookingId(currentBooking)
+            });
+
+            Alert.alert("Cancelled", "Booking cancelled successfully");
+            fetchBookings();
+          } catch (err) {
+            console.log("❌ Cancel failed:", err?.response?.data || err.message);
+            Alert.alert(
+              "Cancel failed",
+              err?.response?.data?.message || "Could not cancel booking"
+            );
+          }
+        }
+      }
+    ]);
+  };
+
+  const renderBookingCard = (booking, type) => {
+    const isCurrent = type === "current";
+    const bookingId = getBookingId(booking);
+
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
-
-  /*
-  ==============================
-  EMPTY STATE
-  ==============================
-  */
-  if (!booking) {
-    return (
-      <View style={styles.center}>
-        <Ionicons name="calendar-outline" size={70} color="#ccc" />
-        <Text style={styles.empty}>
-          No Active Booking
-        </Text>
-      </View>
-    );
-  }
-
-  /*
-  ==============================
-  UI
-  ==============================
-  */
-  return (
-    <SafeAreaView style={styles.container}>
-
-      <Text style={styles.title}>
-        Active Booking
-      </Text>
-
-      <View style={styles.card}>
-
+      <TouchableOpacity
+        key={bookingId}
+        style={[
+          styles.card,
+          isCurrent ? styles.currentCard : styles.finishedCard
+        ]}
+        activeOpacity={0.8}
+        onPress={() =>
+          isCurrent ? openCurrentBooking() : openFinishedBooking(booking)
+        }
+      >
         <Image
           source={{
-            uri: booking?.buddy?.image ||
+            uri:
+              booking?.buddy?.image ||
+              booking?.buddy?.profileImage ||
               "https://via.placeholder.com/100"
           }}
           style={styles.avatar}
         />
 
-        <View style={{ flex: 1 }}>
-
+        <View style={styles.cardContent}>
           <Text style={styles.name}>
-            {booking?.buddy?.name}
+            {booking?.buddy?.name || "Buddy"}
           </Text>
 
           <Text style={styles.info}>
-            {booking?.category?.name}
+            {booking?.category?.name || booking?.category || "Service"}
           </Text>
 
-          <Text style={styles.status}>
-            {booking?.status}
+          <Text
+            style={[
+              styles.status,
+              { color: isCurrent ? "#34C759" : "#777" }
+            ]}
+          >
+            {isCurrent ? `Current • ${booking?.status || "active"}` : booking?.status || "completed"}
           </Text>
 
+          <Text style={styles.small}>
+            Booking: {bookingId}
+          </Text>
         </View>
-      </View>
 
-      {/* TRACK */}
-      <TouchableOpacity
-        style={styles.trackBtn}
-        onPress={() =>
-          navigation.navigate("Tracking", {
-            bookingId: booking._id,
-            buddy: booking?.buddy
-          })
+        <Ionicons
+          name={isCurrent ? "navigate-circle" : "information-circle-outline"}
+          size={28}
+          color={isCurrent ? "#007AFF" : "#555"}
+        />
+      </TouchableOpacity>
+    );
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" />
+        <Text style={styles.loadingText}>Loading bookings...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        <Ionicons name="navigate" size={18} color="#fff" />
-        <Text style={styles.trackText}>
-          Track Buddy
-        </Text>
-      </TouchableOpacity>
+        <Text style={styles.title}>My Bookings</Text>
 
-      {/* CANCEL */}
-      <TouchableOpacity
-        style={styles.cancelBtn}
-        onPress={cancelBooking}
-      >
-        <Text style={styles.cancelText}>
-          Cancel Booking
-        </Text>
-      </TouchableOpacity>
+        {currentBooking && (
+          <>
+            <Text style={styles.sectionTitle}>Current Booking</Text>
 
+            {renderBookingCard(currentBooking, "current")}
+
+            <TouchableOpacity
+              style={styles.trackBtn}
+              onPress={openCurrentBooking}
+            >
+              <Ionicons name="navigate" size={18} color="#fff" />
+              <Text style={styles.trackText}>Go to Tracking</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={cancelBooking}
+            >
+              <Text style={styles.cancelText}>Cancel Booking</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        <Text style={styles.sectionTitle}>Finished Bookings</Text>
+
+        {finishedBookings.length > 0 ? (
+          finishedBookings.map((booking) =>
+            renderBookingCard(booking, "finished")
+          )
+        ) : (
+          <View style={styles.emptyBox}>
+            <Ionicons name="calendar-outline" size={60} color="#ccc" />
+            <Text style={styles.empty}>No finished bookings</Text>
+          </View>
+        )}
+
+        {!currentBooking && finishedBookings.length === 0 && (
+          <View style={styles.emptyBox}>
+            <Ionicons name="calendar-outline" size={70} color="#ccc" />
+            <Text style={styles.empty}>No bookings found</Text>
+          </View>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-/*
-==============================
-STYLES
-==============================
-*/
 const styles = StyleSheet.create({
-
   container: {
     flex: 1,
     backgroundColor: "#fff",
@@ -223,30 +292,51 @@ const styles = StyleSheet.create({
     alignItems: "center"
   },
 
-  empty: {
+  loadingText: {
     marginTop: 10,
     color: "#777"
   },
 
   title: {
-    fontSize: 22,
-    fontWeight: "700",
+    fontSize: 24,
+    fontWeight: "800",
     marginBottom: 20
+  },
+
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    marginTop: 15,
+    marginBottom: 10
   },
 
   card: {
     flexDirection: "row",
-    backgroundColor: "#F5F5F5",
     padding: 15,
-    borderRadius: 12,
-    alignItems: "center"
+    borderRadius: 14,
+    alignItems: "center",
+    marginBottom: 12
+  },
+
+  currentCard: {
+    backgroundColor: "#EAF4FF",
+    borderWidth: 1,
+    borderColor: "#007AFF"
+  },
+
+  finishedCard: {
+    backgroundColor: "#F5F5F5"
   },
 
   avatar: {
     width: 60,
     height: 60,
-    borderRadius: 10,
+    borderRadius: 12,
     marginRight: 15
+  },
+
+  cardContent: {
+    flex: 1
   },
 
   name: {
@@ -261,12 +351,17 @@ const styles = StyleSheet.create({
 
   status: {
     marginTop: 4,
-    color: "#34C759",
-    fontWeight: "600"
+    fontWeight: "700"
+  },
+
+  small: {
+    marginTop: 3,
+    fontSize: 11,
+    color: "#888"
   },
 
   trackBtn: {
-    marginTop: 25,
+    marginTop: 10,
     backgroundColor: "#007AFF",
     padding: 15,
     borderRadius: 12,
@@ -282,7 +377,7 @@ const styles = StyleSheet.create({
   },
 
   cancelBtn: {
-    marginTop: 15,
+    marginTop: 12,
     padding: 15,
     borderRadius: 12,
     alignItems: "center",
@@ -293,6 +388,15 @@ const styles = StyleSheet.create({
   cancelText: {
     color: "#FF3B30",
     fontWeight: "700"
-  }
+  },
 
+  emptyBox: {
+    alignItems: "center",
+    padding: 30
+  },
+
+  empty: {
+    marginTop: 10,
+    color: "#777"
+  }
 });

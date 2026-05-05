@@ -1,25 +1,81 @@
-import express from 'express';
-import { autoAssignBuddy,completeBooking,acceptBooking } from '../bookingController/autoasginbuddy.js';
-import { cancelBooking } from '../bookingController/rejectBooking.js'; // Standardized to reject/cancel
-import { completeWork } from '../bookingController/completework.js';
-import { markArrived } from '../bookingController/arrivedController.js';
-import authMiddleware from "../middleware/authMiddleware.js";
-import { startWork } from '../bookingController/startwork.js';
+import express from "express";
 
-const bookingRouter = express.Router()
+import authMiddleware
+from "../middleware/authMiddleware.js";
 
-// User only
-bookingRouter.post('/request', authMiddleware, autoAssignBuddy);
+import { requestBooking } from "../controllers/booking/requestBooking.js";
+import { acceptBooking } from "../controllers/booking/acceptBooking.js";
+import { arrivedBooking } from "../controllers/booking/arrivedBooking.js";
+import {startWorking} from "../Controllers/booking/startwork.js"
+import {completeWork} from "../Controllers/booking/completework.js"
+import { cancelBooking } from "../controllers/booking/cancelBooking.js";
+import { updateLiveLocation,getLiveLocation } from "../Controllers/booking/updateLiveLocation.js";
+import { getActiveBooking } from "../Controllers/booking/getActiveBooking.js";
+import { getBookingHistory } from "../Controllers/booking/getBookingHistory.js";
+const bookingRouter = express.Router();
 
-// Buddy only
-bookingRouter.post('/accept', authMiddleware, acceptBooking);
-bookingRouter.post('/arrived', authMiddleware, markArrived);
-bookingRouter.post('/complete', authMiddleware, completeWork);
+/*
+=========================
+USER
+=========================
+*/
 
-// Both can check status
-bookingRouter.get('/status/:bookingId', authMiddleware, completeBooking);
- 
-// Reject (Buddy) or Cancel (User)
-bookingRouter.post('/cancel', authMiddleware, cancelBooking);
+bookingRouter.post(
+  "/request",
+  authMiddleware,
+  requestBooking
+);
+
+/*
+=========================
+BUDDY
+=========================
+*/
+
+bookingRouter.post(
+  "/accept",
+  authMiddleware,
+  acceptBooking
+);
+
+bookingRouter.post(
+  "/arrived",
+  authMiddleware,
+  arrivedBooking
+);
+
+bookingRouter.post(
+  "/start",
+  authMiddleware,
+  startWorking
+);
+
+bookingRouter.post(
+  "/complete",
+  authMiddleware,
+  completeWork
+);
+
+
+
+// USER BOOKINGS
+bookingRouter.get("/active", authMiddleware, getActiveBooking);
+bookingRouter.get("/history", authMiddleware, getBookingHistory);
+/*
+=========================
+CANCEL
+=========================
+*/
+
+bookingRouter.post(
+  "/cancel",
+  authMiddleware,
+  cancelBooking
+);
+
+
+
+
+
 
 export default bookingRouter;

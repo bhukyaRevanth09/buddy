@@ -10,7 +10,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import * as Location from "expo-location";
 
-const BASE_URL = "http://10.0.0.14:9090/api";
+const BASE_URL = "http://192.168.0.109:9090/api";
 
 const GENDERS = ["Male", "Female", "Other"];
 
@@ -32,7 +32,6 @@ export default function BuddyRegisterScreen({ navigation }) {
     skills: [],
     interests: [],
     education: "",
-    pricePerHour: "",
     location: {
       latitude: null,
       longitude: null,
@@ -91,19 +90,16 @@ export default function BuddyRegisterScreen({ navigation }) {
     fetchInterests();
   }, []);
 
-  // FETCH CATEGORY
   const fetchCategories = async () => {
     const res = await axios.get(`${BASE_URL}/user/categories`);
     setCategories(res.data.data);
   };
 
-  // FETCH INTEREST
   const fetchInterests = async () => {
     const res = await axios.get(`${BASE_URL}/user/interests`);
     setInterests(res.data.data);
   };
 
-  // SELECT CATEGORY
   const handleCategory = async (category) => {
     setForm({
       ...form,
@@ -118,7 +114,7 @@ export default function BuddyRegisterScreen({ navigation }) {
     setSkills(res.data.data);
   };
 
-  // SELECT SKILL / INTEREST
+  // ✅ UPDATED (no max limit)
   const toggleItem = (key, value) => {
     const current = form[key];
 
@@ -128,9 +124,6 @@ export default function BuddyRegisterScreen({ navigation }) {
         [key]: current.filter((i) => i !== value),
       });
     } else {
-      if (key === "skills" && current.length >= 3)
-        return alert("Max 3 skills");
-
       if (key === "interests" && current.length >= 6)
         return alert("Max 6 interests");
 
@@ -141,11 +134,12 @@ export default function BuddyRegisterScreen({ navigation }) {
     }
   };
 
-  // VALIDATION
+  // ✅ UPDATED VALIDATION
   const validate = () => {
     if (!form.name) return "Name required";
     if (!form.email) return "Email required";
     if (!form.phone) return "Phone required";
+
     if (!/^[6-9]\d{9}$/.test(form.phone))
       return "Invalid phone number";
 
@@ -154,11 +148,13 @@ export default function BuddyRegisterScreen({ navigation }) {
 
     if (!form.gender) return "Select gender";
     if (!form.category) return "Select category";
-    if (form.skills.length === 0)
-      return "Select skills";
+
+    if (form.skills.length < 1)
+      return "Select at least 1 skill";
+
     if (form.interests.length === 0)
       return "Select interests";
-    if (!form.pricePerHour) return "Enter price";
+
     if (!form.location.latitude)
       return "Location required";
 
@@ -166,72 +162,63 @@ export default function BuddyRegisterScreen({ navigation }) {
   };
 
   // REGISTER
- const handleRegister = async () => {
-  const error = validate();
-  if (error) {
-    alert(error);
-    return;
-  }
+  const handleRegister = async () => {
+    const error = validate();
+    if (error) {
+      alert(error);
+      return;
+    }
 
-  try {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    // CRITICAL: Format the data for MongoDB GeoJSON [longitude, latitude]
-    const finalFormData = {
-      ...form,
-      geoLocation: {
-        type: "Point",
-        coordinates: [
-          parseFloat(form.location.longitude), // Longitude first
-          parseFloat(form.location.latitude)   // Latitude second
-        ]
-      }
-    };
+      const finalFormData = {
+        ...form,
+        geoLocation: {
+          type: "Point",
+          coordinates: [
+            parseFloat(form.location.longitude),
+            parseFloat(form.location.latitude),
+          ],
+        },
+      };
 
-    // 1. Send OTP first
-    const res = await axios.post(`${BASE_URL}/auth/send-otp`, {
-      email: form.email,
-      role: "buddy",
-      type: "register",
-    });
-
-    if (res.data.success) {
-      // 2. Pass the finalFormData to the OTP screen
-      navigation.navigate("OTP", {
+      const res = await axios.post(`${BASE_URL}/auth/send-otp`, {
+        email: form.email,
         role: "buddy",
         type: "register",
-        email: form.email,
-        formData: finalFormData, 
       });
+
+      if (res.data.success) {
+        navigation.navigate("OTP", {
+          role: "buddy",
+          type: "register",
+          email: form.email,
+          formData: finalFormData,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || "Registration failed");
+    } finally {
+      setLoading(false);
     }
-  } catch (err) {
-    console.error(err);
-    alert(err.response?.data?.message || "Registration failed to start");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>
-        Become a Buddy
-      </Text>
+      <Text style={styles.title}>Become a Buddy</Text>
 
       <TextInput
         placeholder="Name"
         style={styles.input}
-        onChangeText={(v) =>
-          setForm({ ...form, name: v })
-        }
+        onChangeText={(v) => setForm({ ...form, name: v })}
       />
 
       <TextInput
         placeholder="Email"
         style={styles.input}
-        onChangeText={(v) =>
-          setForm({ ...form, email: v })
-        }
+        onChangeText={(v) => setForm({ ...form, email: v })}
       />
 
       <TextInput
@@ -239,19 +226,11 @@ export default function BuddyRegisterScreen({ navigation }) {
         style={styles.input}
         keyboardType="phone-pad"
         maxLength={10}
-        onChangeText={(v) =>
-          setForm({ ...form, phone: v })
-        }
+        onChangeText={(v) => setForm({ ...form, phone: v })}
       />
 
-      <TouchableOpacity
-        style={styles.input}
-        onPress={getLocation}
-      >
-        <Text>
-          {form.location.address ||
-            "Detect Location"}
-        </Text>
+      <TouchableOpacity style={styles.input} onPress={getLocation}>
+        <Text>{form.location.address || "Detect Location"}</Text>
       </TouchableOpacity>
 
       {/* PASSWORD */}
@@ -264,16 +243,11 @@ export default function BuddyRegisterScreen({ navigation }) {
             setForm({ ...form, password: v })
           }
         />
-
         <TouchableOpacity
           style={styles.eye}
-          onPress={() =>
-            setShowPassword(!showPassword)
-          }
+          onPress={() => setShowPassword(!showPassword)}
         >
-          <Text>
-            {showPassword ? "Hide" : "Show"}
-          </Text>
+          <Text>{showPassword ? "Hide" : "Show"}</Text>
         </TouchableOpacity>
       </View>
 
@@ -285,12 +259,9 @@ export default function BuddyRegisterScreen({ navigation }) {
             key={g}
             style={[
               styles.chip,
-              form.gender === g &&
-                styles.selectedChip,
+              form.gender === g && styles.selectedChip,
             ]}
-            onPress={() =>
-              setForm({ ...form, gender: g })
-            }
+            onPress={() => setForm({ ...form, gender: g })}
           >
             <Text>{g}</Text>
           </TouchableOpacity>
@@ -298,21 +269,16 @@ export default function BuddyRegisterScreen({ navigation }) {
       </View>
 
       {/* CATEGORY */}
-      <Text style={styles.label}>
-        Select Category
-      </Text>
+      <Text style={styles.label}>Select Category</Text>
       <View style={styles.row}>
         {categories.map((c) => (
           <TouchableOpacity
             key={c._id}
             style={[
               styles.chip,
-              form.category === c._id &&
-                styles.selectedChip,
+              form.category === c._id && styles.selectedChip,
             ]}
-            onPress={() =>
-              handleCategory(c)
-            }
+            onPress={() => handleCategory(c)}
           >
             <Text>{c.name}</Text>
           </TouchableOpacity>
@@ -323,7 +289,7 @@ export default function BuddyRegisterScreen({ navigation }) {
       {form.category && (
         <>
           <Text style={styles.label}>
-            Skills (max 3)
+            Skills (select at least 1)
           </Text>
           <View style={styles.row}>
             {skills.map((s) => (
@@ -335,10 +301,7 @@ export default function BuddyRegisterScreen({ navigation }) {
                     styles.selectedChip,
                 ]}
                 onPress={() =>
-                  toggleItem(
-                    "skills",
-                    s._id
-                  )
+                  toggleItem("skills", s._id)
                 }
               >
                 <Text>{s.name}</Text>
@@ -348,28 +311,21 @@ export default function BuddyRegisterScreen({ navigation }) {
         </>
       )}
 
-      {/* INTEREST */}
-      {form.skills.length > 0 && (
+      {/* INTERESTS */}
+      {form.category && (
         <>
-          <Text style={styles.label}>
-            Interests
-          </Text>
+          <Text style={styles.label}>Interests</Text>
           <View style={styles.row}>
             {interests.map((i) => (
               <TouchableOpacity
                 key={i._id}
                 style={[
                   styles.chip,
-                  form.interests.includes(
-                    i._id
-                  ) &&
+                  form.interests.includes(i._id) &&
                     styles.selectedChip,
                 ]}
                 onPress={() =>
-                  toggleItem(
-                    "interests",
-                    i._id
-                  )
+                  toggleItem("interests", i._id)
                 }
               >
                 <Text>{i.name}</Text>
@@ -383,22 +339,7 @@ export default function BuddyRegisterScreen({ navigation }) {
         placeholder="Education (optional)"
         style={styles.input}
         onChangeText={(v) =>
-          setForm({
-            ...form,
-            education: v,
-          })
-        }
-      />
-
-      <TextInput
-        placeholder="Price ₹"
-        style={styles.input}
-        keyboardType="numeric"
-        onChangeText={(v) =>
-          setForm({
-            ...form,
-            pricePerHour: v,
-          })
+          setForm({ ...form, education: v })
         }
       />
 
@@ -407,9 +348,7 @@ export default function BuddyRegisterScreen({ navigation }) {
         onPress={handleRegister}
       >
         <Text style={styles.buttonText}>
-          {loading
-            ? "Sending OTP..."
-            : "Register"}
+          {loading ? "Sending OTP..." : "Register"}
         </Text>
       </TouchableOpacity>
     </ScrollView>

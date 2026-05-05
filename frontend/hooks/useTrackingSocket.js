@@ -1,71 +1,111 @@
-import { useEffect, useState, useRef } from "react";
+// hooks/useTrackingSocket.js
+
+import { useEffect, useState } from "react";
+import { SOCKET_EVENTS } from "../evenets/frontendsocketEvents";
 
 export default function useTrackingSocket(socket, bookingId) {
 
   const [buddyLocation, setBuddyLocation] = useState(null);
-  const [status, setStatus] = useState("accepted");
-
-  const lastLocationRef = useRef(null);
+  const [trackingStatus, setTrackingStatus] = useState("waiting");
+  const [workStarted, setWorkStarted] = useState(false);
+  const [workCompleted, setWorkCompleted] = useState(false);
 
   useEffect(() => {
+
     if (!socket || !bookingId) return;
 
-    console.log("📦 Joining booking room:", bookingId);
-
-    socket.emit("join_booking_room", bookingId);
+    /*
+    =========================
+    JOIN ROOM
+    =========================
+    */
+    socket.emit(SOCKET_EVENTS.BOOKING_JOIN, bookingId);
 
     /*
     =========================
     LOCATION UPDATE
     =========================
     */
-    const handleLocation = (data) => {
+    const onLocationUpdate = (data) => {
+
       if (!data || data.bookingId !== bookingId) return;
 
-      const latitude = data.latitude ?? data.lat;
-      const longitude = data.longitude ?? data.lng;
+      // ✅ flexible payload handling
+      const latitude =
+        data?.location?.latitude || data?.lat || data?.latitude;
+
+      const longitude =
+        data?.location?.longitude || data?.lng || data?.longitude;
 
       if (!latitude || !longitude) return;
 
-      const newLocation = { latitude, longitude };
-      const last = lastLocationRef.current;
+      setBuddyLocation({
+        latitude,
+        longitude
+      });
 
-      // prevent unnecessary re-renders
-      if (
-        !last ||
-        last.latitude !== newLocation.latitude ||
-        last.longitude !== newLocation.longitude
-      ) {
-        lastLocationRef.current = newLocation;
-        setBuddyLocation(newLocation);
-      }
+      setTrackingStatus("moving");
     };
 
     /*
     =========================
-    STATUS EVENTS
+    TRACKING STARTED
     =========================
     */
-    const handleStart = (data) => {
-      if (data.bookingId === bookingId) {
-        setStatus("started");
-      }
-    };
+    const onTrackingStarted = (data) => {
 
-    const handleComplete = (data) => {
-      if (data.bookingId === bookingId) {
-        setStatus("completed");
-      }
+      if (data?.bookingId !== bookingId) return;
+
+      setTrackingStatus("moving");
     };
 
     /*
     =========================
-    LISTENERS
+    WORK STARTED
     =========================
     */
-    socket.on("location_update", handleLocation);
-    socket.on("tracking_started", handleStart);
-    socket.on("booking_completed", handleComplete);
+    const onWorkStarted = (data) => {
+
+      if (data?.bookingId !== bookingId) return;
+
+      setWorkStarted(true);
+    };
+
+    /*
+    =========================
+    WORK COMPLETED
+    =========================
+    */
+    const onWorkCompleted = (data) => {
+
+      if (data?.bookingId !== bookingId) return;
+
+      setWorkCompleted(true);
+      setTrackingStatus("completed");
+    };
+
+    /*
+    =========================
+    TRACKING ENDED (safety)
+    =========================
+    */
+    const onTrackingEnded = (data) => {
+
+      if (data?.bookingId !== bookingId) return;
+
+      setTrackingStatus("completed");
+    };
+
+    /*
+    =========================
+    SOCKET LISTENERS
+    =========================
+    */
+    socket.on(SOCKET_EVENTS.LOCATION_UPDATE, onLocationUpdate);
+    socket.on(SOCKET_EVENTS.TRACKING_STARTED, onTrackingStarted);
+    socket.on(SOCKET_EVENTS.WORK_STARTED, onWorkStarted);
+    socket.on(SOCKET_EVENTS.WORK_COMPLETED, onWorkCompleted);
+    socket.on(SOCKET_EVENTS.TRACKING_ENDED, onTrackingEnded);
 
     /*
     =========================
@@ -73,16 +113,22 @@ export default function useTrackingSocket(socket, bookingId) {
     =========================
     */
     return () => {
-      console.log("🚪 Leaving booking room:", bookingId);
 
-      socket.off("location_update", handleLocation);
-      socket.off("tracking_started", handleStart);
-      socket.off("booking_completed", handleComplete);
+      socket.emit(SOCKET_EVENTS.BOOKING_LEAVE, bookingId);
 
-      socket.emit("leave_booking_room", bookingId);
+      socket.off(SOCKET_EVENTS.LOCATION_UPDATE, onLocationUpdate);
+      socket.off(SOCKET_EVENTS.TRACKING_STARTED, onTrackingStarted);
+      socket.off(SOCKET_EVENTS.WORK_STARTED, onWorkStarted);
+      socket.off(SOCKET_EVENTS.WORK_COMPLETED, onWorkCompleted);
+      socket.off(SOCKET_EVENTS.TRACKING_ENDED, onTrackingEnded);
     };
 
   }, [socket, bookingId]);
 
-  return { buddyLocation, status };
+  return {
+    buddyLocation,
+    trackingStatus,
+    workStarted,
+    workCompleted
+  };
 }

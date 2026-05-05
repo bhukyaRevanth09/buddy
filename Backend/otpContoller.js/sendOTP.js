@@ -70,7 +70,13 @@ export const sendOtp = async (req, res, next) => {
 
     // 📧 Send Email
     try {
-      await sendEmail(email, otp);
+     await sendEmail({
+  email,
+  otp,
+  subject: "Verify your email - OTP",
+  title: "Verify your email",
+  message: "Use this OTP to continue"
+});
     } catch (err) {
       console.log("⚠️ Email failed, fallback to console");
     }

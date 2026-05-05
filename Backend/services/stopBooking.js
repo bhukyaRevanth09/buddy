@@ -1,5 +1,5 @@
 import redis from "../Config/redis.js";
-import { getIO } from "./Socket.js";
+import { getIO } from "../socket/socket.js";
 
 /**
  * Clears the temporary search state from Redis.

@@ -471,6 +471,7 @@ export const resetPasswordOtp = async (req, res, next) => {
 
 
 export const buddyReg = async (req, res, next) => {
+  console.log(req?.body)
   try {
     const { email, phone, password, geoLocation } = req.body;
 

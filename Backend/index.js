@@ -2,10 +2,10 @@ import dotenv from 'dotenv';
 import connectDB from './Config/db.js';
 import app from './Config/express.js';
 import http from "http";
-import { initSocket } from './services/Socket.js';
+import { initSocket } from './socket/socket.js';
 import seed from '../Backend/seedData/skillSeedData.js'
 import { selectcategory } from './testing.js';
-import { startBookingWorker } from './utils/Worker.js';
+import { startBookingWorker } from './worker/Worker.js';
 
 
 dotenv.config({ quiet: true });

@@ -2,7 +2,7 @@ import axios from "axios";
 import * as SecureStore from "expo-secure-store";
 
 const api = axios.create({
-  baseURL: "http://10.0.0.14:9090/api",
+  baseURL: "http://192.168.0.109:9090/api",
   headers: {
     "Content-Type": "application/json",
   },
@@ -110,7 +110,7 @@ api.interceptors.response.use(
         }
 
         const res = await axios.post(
-          "http://10.0.0.14:9090/api/auth/refresh-token",
+          "http://192.168.0.109:9090/api/auth/refresh-token",
           { refreshToken }
         );
 

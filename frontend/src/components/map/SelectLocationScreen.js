@@ -7,7 +7,8 @@ import {
   Dimensions,
   Modal,
   TextInput,
-  Alert
+  Alert,
+  ActivityIndicator
 } from "react-native";
 
 import MapView, { PROVIDER_GOOGLE, Marker } from "react-native-maps";
@@ -20,6 +21,7 @@ const { height } = Dimensions.get("window");
 export default function SelectLocationScreen({ navigation }) {
 
   const { setSelectedLocation } = useContext(LocationContext);
+
   const mapRef = useRef(null);
 
   const [region, setRegion] = useState(null);
@@ -28,10 +30,15 @@ export default function SelectLocationScreen({ navigation }) {
 
   const [houseNo, setHouseNo] = useState("");
   const [road, setRoad] = useState("");
-  const [landmark, setLandmark] = useState(""); // ✅ USER ONLY
+  const [landmark, setLandmark] = useState("");
+
   const [type, setType] = useState("home");
 
   const [modalVisible, setModalVisible] = useState(false);
+
+  const [loadingAddress, setLoadingAddress] = useState(false);
+
+  const lastRequestRef = useRef(null);
 
   /*
   ===============================
@@ -39,108 +46,119 @@ export default function SelectLocationScreen({ navigation }) {
   ===============================
   */
   useEffect(() => {
+
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+
+      const { status } =
+        await Location.requestForegroundPermissionsAsync();
 
       if (status !== "granted") {
         Alert.alert("Permission denied");
         return;
       }
 
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
+      const loc =
+        await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High
+        });
 
       const coords = {
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
         latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
+        longitudeDelta: 0.01
       };
 
       setRegion(coords);
       setUserCurrentLocation(coords);
+
     })();
+
   }, []);
 
   /*
   ===============================
-  MAP CLICK
+  MAP PRESS (OPTIMIZED)
   ===============================
   */
   const handleMapPress = async (e) => {
 
-    const { latitude, longitude } = e.nativeEvent.coordinate;
+    const { latitude, longitude } =
+      e.nativeEvent.coordinate;
 
     setSelectedCoords({ latitude, longitude });
 
-    // ✅ HARD RESET (IMPORTANT)
+    // reset fields
     setHouseNo("");
     setRoad("");
-    setLandmark(""); // 🔥 ALWAYS EMPTY
+    setLandmark("");
+
+    setLoadingAddress(true);
+
+    const requestId = Date.now();
+    lastRequestRef.current = requestId;
 
     try {
-      const res = await Location.reverseGeocodeAsync({
-        latitude,
-        longitude,
-      });
 
-      if (res.length > 0) {
+      const res =
+        await Location.reverseGeocodeAsync({
+          latitude,
+          longitude
+        });
+
+      // ignore stale response
+      if (lastRequestRef.current !== requestId) return;
+
+      if (res?.length > 0) {
 
         const addr = res[0];
 
-        /*
-        ===============================
-        ROAD (ONLY STREET + AREA)
-        ===============================
-        */
         const cleanRoad = [
           addr.street,
-          addr.district
+          addr.district,
+          addr.city
         ]
           .filter(Boolean)
-          .filter((v, i, arr) => arr.indexOf(v) === i)
+          .filter((v, i, a) => a.indexOf(v) === i)
           .join(", ");
 
-        setRoad(cleanRoad);
+        setRoad(cleanRoad || "");
 
-        /*
-        ===============================
-        HOUSE NUMBER
-        ===============================
-        */
         setHouseNo(addr.streetNumber || "");
 
-        /*
-        ❌ DO NOT TOUCH LANDMARK
-        */
-        setLandmark(""); // 🔥 force empty again
+        setLandmark(""); // ALWAYS USER INPUT ONLY
       }
 
     } catch (err) {
-      console.log("Geocode error", err);
+      console.log("Geocode error:", err);
+    } finally {
+      setLoadingAddress(false);
     }
   };
 
   /*
   ===============================
-  CONFIRM CLICK
+  CONFIRM
   ===============================
   */
   const handleConfirm = () => {
+
     if (!selectedCoords) {
       Alert.alert("Select a location first");
       return;
     }
+
     setModalVisible(true);
   };
 
   /*
   ===============================
-  SAVE ADDRESS
+  SAVE
   ===============================
   */
   const saveAddress = () => {
+
+    if (!selectedCoords) return;
 
     const fullAddress = [
       houseNo?.trim(),
@@ -150,21 +168,17 @@ export default function SelectLocationScreen({ navigation }) {
       .filter(Boolean)
       .join(", ");
 
-    const fullLocation = {
+    const locationData = {
       latitude: selectedCoords.latitude,
       longitude: selectedCoords.longitude,
-
       houseNo: houseNo?.trim(),
       road: road?.trim(),
-
-      // ✅ ONLY USER INPUT (no auto values ever)
       landmark: landmark?.trim(),
-
       type,
       fullAddress
     };
 
-    setSelectedLocation(fullLocation);
+    setSelectedLocation(locationData);
 
     setModalVisible(false);
     navigation.goBack();
@@ -176,8 +190,13 @@ export default function SelectLocationScreen({ navigation }) {
   ===============================
   */
   const recenter = () => {
+
     if (!userCurrentLocation) return;
-    mapRef.current?.animateToRegion(userCurrentLocation, 800);
+
+    mapRef.current?.animateToRegion(
+      userCurrentLocation,
+      800
+    );
   };
 
   if (!region) return null;
@@ -193,29 +212,61 @@ export default function SelectLocationScreen({ navigation }) {
         onPress={handleMapPress}
         showsUserLocation
       >
+
         {selectedCoords && (
           <Marker coordinate={selectedCoords}>
-            <Ionicons name="location-sharp" size={40} color="red" />
+            <Ionicons
+              name="location-sharp"
+              size={40}
+              color="red"
+            />
           </Marker>
         )}
+
       </MapView>
 
       {/* RECENTER */}
-      <TouchableOpacity style={styles.recenterBtn} onPress={recenter}>
-        <MaterialIcons name="my-location" size={26} color="#4CAF50" />
+      <TouchableOpacity
+        style={styles.recenterBtn}
+        onPress={recenter}
+      >
+        <MaterialIcons
+          name="my-location"
+          size={26}
+          color="#4CAF50"
+        />
       </TouchableOpacity>
 
       {/* CONFIRM */}
-      <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
-        <Text style={styles.confirmText}>Confirm Location</Text>
+      <TouchableOpacity
+        style={styles.confirmBtn}
+        onPress={handleConfirm}
+      >
+        <Text style={styles.confirmText}>
+          Confirm Location
+        </Text>
       </TouchableOpacity>
 
+      {/* LOADING */}
+      {loadingAddress && (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator color="#000" />
+          <Text>Fetching address...</Text>
+        </View>
+      )}
+
       {/* MODAL */}
-      <Modal visible={modalVisible} transparent animationType="slide">
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="slide"
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
 
-            <Text style={styles.modalTitle}>Complete Address</Text>
+            <Text style={styles.modalTitle}>
+              Complete Address
+            </Text>
 
             <TextInput
               placeholder="House / Flat No"
@@ -232,41 +283,38 @@ export default function SelectLocationScreen({ navigation }) {
             />
 
             <TextInput
-              placeholder="Landmark (Enter manually)"
+              placeholder="Landmark (manual)"
               value={landmark}
               onChangeText={setLandmark}
               style={styles.input}
             />
 
             <View style={styles.typeContainer}>
-              {["home", "work", "other"].map((item) => (
+              {["home", "work", "other"].map(t => (
                 <TouchableOpacity
-                  key={item}
+                  key={t}
                   style={[
                     styles.typeBtn,
-                    type === item && styles.activeType,
+                    type === t && styles.activeType
                   ]}
-                  onPress={() => setType(item)}
+                  onPress={() => setType(t)}
                 >
                   <Text style={{
-                    color: type === item ? "#fff" : "#000",
-                    fontWeight: "bold",
+                    color: type === t ? "#fff" : "#000"
                   }}>
-                    {item.toUpperCase()}
+                    {t.toUpperCase()}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            <TouchableOpacity style={styles.saveBtn} onPress={saveAddress}>
-              <Text style={styles.saveText}>Save Address</Text>
-            </TouchableOpacity>
-
             <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setModalVisible(false)}
+              style={styles.saveBtn}
+              onPress={saveAddress}
             >
-              <Text style={styles.cancelText}>Cancel</Text>
+              <Text style={styles.saveText}>
+                Save Address
+              </Text>
             </TouchableOpacity>
 
           </View>

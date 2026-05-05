@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SOCKET_EVENTS } from "../evenets/frontendsocketEvents";
 
 export default function useBuddyLocation(socket) {
 
@@ -7,17 +8,46 @@ export default function useBuddyLocation(socket) {
   useEffect(() => {
     if (!socket) return;
 
+    /*
+    =========================
+    LOCATION UPDATE HANDLER
+    =========================
+    */
     const handler = (data) => {
+
+      if (!data) return;
+
+      // ✅ support both formats (safe fallback)
+      const latitude =
+        data?.location?.latitude || data?.lat || data?.latitude;
+
+      const longitude =
+        data?.location?.longitude || data?.lng || data?.longitude;
+
+      if (!latitude || !longitude) return;
+
       setBuddyLocation({
-        latitude: data.location?.latitude || data.lat,
-        longitude: data.location?.longitude || data.lng,
-        buddyId: data.buddyId
+        latitude,
+        longitude,
+        buddyId: data?.buddyId || null
       });
     };
 
-    socket.on("update_location", handler);
+    /*
+    =========================
+    SOCKET LISTENER
+    =========================
+    */
+    socket.on(SOCKET_EVENTS.LOCATION_UPDATE, handler);
 
-    return () => socket.off("update_location", handler);
+    /*
+    =========================
+    CLEANUP
+    =========================
+    */
+    return () => {
+      socket.off(SOCKET_EVENTS.LOCATION_UPDATE, handler);
+    };
 
   }, [socket]);
 

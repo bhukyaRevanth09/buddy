@@ -58,7 +58,7 @@ export default function UserLoginScreen({ navigation }) {
 
     try {
       const res = await axios.post(
-        "http://10.0.0.14:9090/api/user/user-login",
+        "http://192.168.0.109:9090/api/user/user-login",
         {
           email: formData.email.trim().toLowerCase(),
           password: formData.password,

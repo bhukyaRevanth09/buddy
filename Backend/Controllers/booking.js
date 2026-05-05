@@ -1,35 +1,48 @@
 import buddyModel from "../models/BuddySchema.js";
 import userModel from "../models/userSchema.js";
 import instantBookingModel from "../models/instantBooking.js";
-import { getIO } from '../services/Socket.js'; 
-import redis from '../Config/redis.js';
+import { getIO } from "../socket/socket.js";
+import redis from "../Config/redis.js";
+import { SOCKET_EVENTS } from "../constants/backendSocketEvents.js";
 import mongoose from "mongoose";
 
+/*
+=========================================
+TOGGLE ONLINE STATUS
+=========================================
+*/
 export const toggleOnlineStatus = async (req, res) => {
-  console.log(req.body);
-
   try {
     const buddyId = req.userId;
     const { status } = req.body;
 
     /*
     =========================
-    CONVERT STATUS PROPERLY
+    NORMALIZE STATUS
     =========================
     */
-    const isOnline = status === "available" || status === true;
+    const isOnline =
+      status === "available" || status === true;
 
-   const updatedBuddy = await buddyModel.findByIdAndUpdate(
-  buddyId,
-  {
-    isOnline: isOnline,
-    availabilityStatus: isOnline ? "available" : "offline",
-    updatedAt: new Date()
-  },
-  {
-    returnDocument: "after" // ✅ correct modern replacement
-  }
-);
+    /*
+    =========================
+    UPDATE BUDDY
+    =========================
+    */
+    const updatedBuddy =
+      await buddyModel.findByIdAndUpdate(
+        buddyId,
+        {
+          isOnline,
+          availabilityStatus: isOnline
+            ? "available"
+            : "offline",
+          lastSeenAt: new Date()
+        },
+        {
+          new: true
+        }
+      );
 
     if (!updatedBuddy) {
       return res.status(404).json({
@@ -40,28 +53,40 @@ export const toggleOnlineStatus = async (req, res) => {
 
     /*
     =========================
-    REDIS
+    REDIS CACHE
     =========================
     */
     if (isOnline) {
-      await redis.set(`status:${buddyId}`, "online", "EX", 3600);
+      await redis.set(
+        `status:${buddyId}`,
+        "online",
+        "EX",
+        3600
+      );
     } else {
       await redis.del(`status:${buddyId}`);
     }
 
     /*
     =========================
-    SOCKET
+    SOCKET EVENT
     =========================
     */
     const io = getIO();
 
-    io.emit("buddy_status_updated", {
-      buddyId: updatedBuddy._id.toString(),
-      isOnline: updatedBuddy.isOnline,
-      availabilityStatus: updatedBuddy.availabilityStatus,
-      lastSeen: updatedBuddy.updatedAt
-    });
+    io.emit(
+      SOCKET_EVENTS.STATUS_UPDATE,
+      {
+        buddyId:
+          updatedBuddy._id.toString(),
+        isOnline:
+          updatedBuddy.isOnline,
+        availabilityStatus:
+          updatedBuddy.availabilityStatus,
+        lastSeen:
+          updatedBuddy.lastSeenAt
+      }
+    );
 
     /*
     =========================
@@ -70,11 +95,16 @@ export const toggleOnlineStatus = async (req, res) => {
     */
     return res.json({
       success: true,
-      isOnline: updatedBuddy.isOnline
+      isOnline: updatedBuddy.isOnline,
+      availabilityStatus:
+        updatedBuddy.availabilityStatus
     });
 
   } catch (error) {
-    console.log("toggle error", error);
+    console.log(
+      "❌ TOGGLE STATUS ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -83,35 +113,45 @@ export const toggleOnlineStatus = async (req, res) => {
   }
 };
 
-
-
+/*
+=========================================
+BUDDY DASHBOARD
+=========================================
+*/
 export const getBuddyDashboard = async (req, res) => {
   try {
     const buddyId = req.userId;
 
-    console.log("revanth !!!");
-
-    // Validate ID
-    if (!buddyId || !mongoose.Types.ObjectId.isValid(buddyId)) {
+    if (
+      !mongoose.Types.ObjectId.isValid(
+        buddyId
+      )
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Invalid buddy ID"
+        error: "INVALID_BUDDY_ID",
+        message:
+          "Buddy ID is invalid"
       });
     }
 
     /*
     =========================
-    BUDDY INFO
+    GET BUDDY DATA
     =========================
     */
-    const buddy = await buddyModel
-      .findById(buddyId)
-      .select("rating isOnline availabilityStatus")
-      .lean();
+    const buddy =
+      await buddyModel
+        .findById(buddyId)
+        .select(
+          "rating isOnline availabilityStatus earnings totalBooking"
+        )
+        .lean();
 
     if (!buddy) {
       return res.status(404).json({
         success: false,
+        error: "NOT_FOUND",
         message: "Buddy not found"
       });
     }
@@ -121,23 +161,52 @@ export const getBuddyDashboard = async (req, res) => {
     COMPLETED JOBS
     =========================
     */
-    const completedJobs = await instantBookingModel.countDocuments({
-      buddy: buddyId,
-      status: "completed"
-    });
+    const completedJobs =
+      await instantBookingModel.countDocuments(
+        {
+          buddy: buddyId,
+          status: "completed"
+        }
+      );
 
     /*
     =========================
     ACTIVE BOOKING
     =========================
     */
-    const booking = await instantBookingModel
-      .findOne({
-        buddy: buddyId,
-        status: { $in: ["accepted", "started", "arrived"] }
-      })
-      .populate("user", "name")   // ✅ FIXED: lowercase "user"
-      .lean();
+    const activeBooking =
+      await instantBookingModel
+        .findOne({
+          buddy: buddyId,
+          status: {
+            $in: [
+              "accepted",
+              "started",
+              "arrived"
+            ]
+          }
+        })
+        .populate("user", "name phone")
+        .lean();
+
+    /*
+    =========================
+    OPTIONAL: EMIT DASHBOARD UPDATE
+    (Useful for real-time UI)
+    =========================
+    */
+    const io = getIO();
+
+    io.to(buddyId.toString()).emit(
+      SOCKET_EVENTS.STATUS_UPDATE,
+      {
+        type: "dashboard",
+        completedJobs,
+        isOnline: buddy.isOnline,
+        availabilityStatus:
+          buddy.availabilityStatus
+      }
+    );
 
     /*
     =========================
@@ -148,26 +217,38 @@ export const getBuddyDashboard = async (req, res) => {
       success: true,
       data: {
         completedJobs,
-        rating: buddy.rating || 4.5,
-        isOnline: buddy.isOnline || false,
-        availabilityStatus: buddy.availabilityStatus || "offline",
-
-        activeBooking: booking
+        rating:
+          buddy.rating?.average || 0,
+        isOnline: buddy.isOnline,
+        availabilityStatus:
+          buddy.availabilityStatus,
+        earnings: buddy.earnings,
+        totalBooking:
+          buddy.totalBooking,
+        activeBooking: activeBooking
           ? {
-              bookingId: booking._id,
-              customerName: booking.user?.name || "Customer",
-              status: booking.status
+              bookingId:
+                activeBooking._id,
+              customerName:
+                activeBooking.user?.name,
+              status:
+                activeBooking.status
             }
           : null
       }
     });
 
-  } catch (error) {
-    console.error("❌ Dashboard Error:", error);
+  } catch (err) {
+    console.error(
+      "❌ DASHBOARD_ERROR:",
+      err
+    );
 
     return res.status(500).json({
       success: false,
-      message: error.message
+      error: "DASHBOARD_FAILED",
+      message:
+        "Internal server error"
     });
   }
 };

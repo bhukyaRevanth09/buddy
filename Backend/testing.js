@@ -13,6 +13,8 @@ import skillModel from "./models/SkillStore.js"
 const skillId = "69d757d1549501ed01eae8c2"
  const findSkill = await buddyModel.find({skills:skillId})
  console.log(findSkill)
-}
+} 
+
+
 
 
