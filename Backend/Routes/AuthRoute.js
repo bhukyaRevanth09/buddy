@@ -1,23 +1,31 @@
 import express from "express";
+
 import { sendOtp } from "../otpContoller.js/sendOTP.js";
 import { verifyOtp } from "../otpContoller.js/verifyOTP.js";
-import { resetPasswordOtp } from "../Controllers/auth.js";
-import { getAccessTokenFromRefresh } from "../Controllers/auth.js";
-import { changePassword } from "../Controllers/auth.js";
+
+import {
+  resetPassword,
+  getAccessTokenFromRefresh,
+  changePassword
+} from "../Controllers/auth.js";
+
 import authMiddleware from "../middleware/authMiddleware.js";
 
 const authRouter = express.Router();
 
-// Send OTP
-authRouter.post("/send-otp",sendOtp);
-
-// Verify OTP (optional separate step)
+authRouter.post("/send-otp", sendOtp);
 authRouter.post("/verify-otp", verifyOtp);
 
-authRouter.post("/refresh-token",getAccessTokenFromRefresh)
+authRouter.post("/refresh-token", getAccessTokenFromRefresh);
 
-authRouter.post("/restPassword",authMiddleware,resetPasswordOtp)
+// Forgot password: no authMiddleware needed
+authRouter.post("/reset-password", resetPassword);
 
-authRouter.put("/change-password",authMiddleware,changePassword)
+// Old typo route support, optional
+authRouter.post("/restPassword", resetPassword);
+authRouter.post("/reset-Password", resetPassword);
+
+// Logged-in user/buddy change password
+authRouter.put("/change-password", authMiddleware, changePassword);
 
 export default authRouter;

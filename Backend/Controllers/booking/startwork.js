@@ -4,15 +4,15 @@ import { SOCKET_EVENTS } from "../../constants/backendSocketEvents.js";
 
 export const startWorking = async (req, res) => {
   try {
-    console.log("\n====================================");
-    console.log("🚀 START WORK");
-    console.log("====================================");
+    
+    console.log(" START WORK");
+   
 
     const { bookingId } = req.body;
     const buddyId = req.userId;
 
-    console.log("📦 BOOKING ID:", bookingId);
-    console.log("🧑 BUDDY:", buddyId);
+    console.log(" BOOKING ID:", bookingId);
+    console.log(" BUDDY:", buddyId);
 
     if (!bookingId) {
       return res.status(400).json({
@@ -49,7 +49,7 @@ export const startWorking = async (req, res) => {
 
     await booking.save();
 
-    console.log("✅ WORK STARTED");
+    console.log(" WORK STARTED");
 
     const io = getIO();
     const bookingRoom = `booking:${bookingId}`;
@@ -81,7 +81,7 @@ export const startWorking = async (req, res) => {
     });
 
   } catch (error) {
-    console.log("❌ START WORK ERROR:", error);
+    console.log(" START WORK ERROR:", error);
 
     return res.status(500).json({
       success: false,

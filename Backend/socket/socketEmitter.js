@@ -15,13 +15,13 @@ export const notifyUser = (
     ).emit(event, data);
 
     console.log(
-      `📤 ${event} -> USER ${targetId}`
+      ` ${event} -> USER ${targetId}`
     );
 
   } catch (error) {
 
     console.log(
-      "❌ notifyUser error:",
+      " notifyUser error:",
       error.message
     );
   }

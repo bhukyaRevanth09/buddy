@@ -34,21 +34,21 @@ export default function HomeScreen({ navigation }) {
     selectedLocation
   } = useContext(LocationContext);
 
-  /*
-  ==========================================
-  LOCATION
-  ==========================================
-  */
+  
+
+  // LOCATION
+ 
+  
   const userLocation =
     selectedLocation ||
     currentLocation ||
     null;
 
-  /*
-  ==========================================
-  STATES
-  ==========================================
-  */
+  
+ 
+  // STATES
+
+  
   const [address, setAddress] = useState("");
 
   const [categories, setCategories] = useState([]);
@@ -72,11 +72,9 @@ export default function HomeScreen({ navigation }) {
   const [refreshing, setRefreshing] =
     useState(false);
 
-  /*
-  ==========================================
-  LOAD INITIAL DATA
-  ==========================================
-  */
+  
+  // LOAD INITIAL DATA
+
   const loadInitialData = async () => {
 
     try {
@@ -95,7 +93,7 @@ export default function HomeScreen({ navigation }) {
     } catch (err) {
 
       console.log(
-        "❌ Home data load error:",
+        " Home data load error:",
         err?.response?.data || err.message
       );
 
@@ -111,20 +109,19 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  /*
-  ==========================================
-  INITIAL LOAD
-  ==========================================
-  */
+
+ 
+  // INITIAL LOAD
+
+
   useEffect(() => {
     loadInitialData();
   }, []);
 
-  /*
-  ==========================================
-  PULL TO REFRESH
-  ==========================================
-  */
+ 
+  // PULL TO REFRESH
+
+
   const onRefresh = useCallback(() => {
 
     setRefreshing(true);
@@ -133,19 +130,19 @@ export default function HomeScreen({ navigation }) {
 
   }, []);
 
-  /*
-  ==========================================
-  SOCKET EVENTS
-  ==========================================
-  */
+  
+ 
+  // SOCKET EVENTS
+ 
+
 useEffect(() => {
   if (!socket) return;
 
-  /*
-  ==========================================
-  BOOKING CREATED (SEARCH STARTED)
-  ==========================================
-  */
+
+ 
+  // BOOKING CREATED (SEARCH STARTED)
+
+  
   const onBookingNew = (data) => {
     console.log("🔍 SEARCH STARTED:", data);
 
@@ -157,15 +154,15 @@ useEffect(() => {
     });
   };
 
-  /*
-  ==========================================
-  BOOKING ACCEPTED
-  ==========================================
-  */
+  
+
+  // BOOKING ACCEPTED
+
+  
   const onAccepted = (data) => {
     if (!data?.bookingId) return;
 
-    console.log("✅ BOOKING ACCEPTED:", data);
+    console.log(" BOOKING ACCEPTED:", data);
 
     navigation.navigate("Tracking", {
       bookingId: data.bookingId,
@@ -174,15 +171,15 @@ useEffect(() => {
     });
   };
 
-  /*
-  ==========================================
-  TRACKING STARTED (WORK START)
-  ==========================================
-  */
+  
+
+  // TRACKING STARTED (WORK START)
+
+  
   const onTrackingStarted = (data) => {
     if (!data?.bookingId) return;
 
-    console.log("🚀 WORK STARTED:", data);
+    console.log(" WORK STARTED:", data);
 
     navigation.navigate("Tracking", {
       bookingId: data.bookingId,
@@ -193,36 +190,39 @@ useEffect(() => {
     });
   };
 
-  /*
-  ==========================================
-  STATUS UPDATE (REALTIME)
-  ==========================================
-  */
+
+
+  // STATUS UPDATE (REALTIME)
+  
   const onStatusUpdate = (data) => {
-    console.log("📡 STATUS UPDATE:", data);
+    console.log(" STATUS update:", data);
 
     // Optional: update UI or state if needed
   };
 
   /*
-  ==========================================
+
   WORK COMPLETED
-  ==========================================
-  */
-  const onWorkCompleted = (data) => {
-    Alert.alert(
-      "Completed",
-      "Work has been completed"
-    );
 
-    navigation.navigate("Home");
-  };
-
-  /*
-  ==========================================
-  TRACKING ENDED
-  ==========================================
   */
+const onWorkCompleted = (data) => {
+  console.log(" WORK COMPLETED IN HOME:", data);
+
+  if (!data?.bookingId) return;
+
+  navigation.navigate("UserReview", {
+    bookingId: data.bookingId,
+    buddy: data.buddy || {
+      _id: data.buddyId,
+      name: "Buddy"
+    }
+  });
+};
+  
+
+  // TRACKING ENDED
+  
+  
   const onTrackingEnded = () => {
     Alert.alert(
       "Completed",
@@ -232,11 +232,11 @@ useEffect(() => {
     navigation.navigate("Home");
   };
 
-  /*
-  ==========================================
-  BOOKING FAILED
-  ==========================================
-  */
+  
+
+  // BOOKING FAILED
+
+  
   const onBookingFailed = (data) => {
     Alert.alert(
       "No Buddy Found",
@@ -245,11 +245,11 @@ useEffect(() => {
     );
   };
 
-  /*
-  ==========================================
-  BOOKING CANCELLED
-  ==========================================
-  */
+
+
+  // BOOKING CANCELLED
+
+ 
   const onBookingCancelled = (data) => {
     Alert.alert(
       "Booking Cancelled",
@@ -260,11 +260,11 @@ useEffect(() => {
     navigation.navigate("Home");
   };
 
-  /*
-  ==========================================
-  SOCKET LISTENERS
-  ==========================================
-  */
+  
+
+  // SOCKET LISTENERS
+
+  
   socket.on(SOCKET_EVENTS.BOOKING_NEW, onBookingNew);
   socket.on(SOCKET_EVENTS.BOOKING_ACCEPTED, onAccepted);
   socket.on(SOCKET_EVENTS.TRACKING_STARTED, onTrackingStarted);
@@ -275,9 +275,9 @@ useEffect(() => {
   socket.on(SOCKET_EVENTS.BOOKING_CANCELLED, onBookingCancelled);
 
   /*
-  ==========================================
+
   CLEANUP
-  ==========================================
+
   */
   return () => {
     socket.off(SOCKET_EVENTS.BOOKING_NEW, onBookingNew);
@@ -291,10 +291,11 @@ useEffect(() => {
   };
 
 }, [socket, userLocation]);
+
   /*
-  ==========================================
+  
   REVERSE GEOCODE
-  ==========================================
+
   */
   useEffect(() => {
 
@@ -330,7 +331,7 @@ useEffect(() => {
       } catch (err) {
 
         console.log(
-          "❌ Reverse geocode error:",
+          " Reverse geocode error:",
           err
         );
       }
@@ -340,11 +341,11 @@ useEffect(() => {
 
   }, [userLocation]);
 
-  /*
-  ==========================================
-  LOAD SKILLS
-  ==========================================
-  */
+  
+
+  // LOAD SKILLS
+
+  
   useEffect(() => {
 
     if (!selectedCategory?._id) {
@@ -370,7 +371,7 @@ useEffect(() => {
       } catch (err) {
 
         console.log(
-          "❌ Skill load error:",
+          " Skill load error:",
           err
         );
 
@@ -382,11 +383,11 @@ useEffect(() => {
 
   }, [selectedCategory]);
 
-  /*
-  ==========================================
-  TOGGLE SELECT
-  ==========================================
-  */
+  
+
+  // TOGGLE SELECT
+
+  
   const toggleSelection = (
     id,
     list,
@@ -400,21 +401,20 @@ useEffect(() => {
     );
   };
 
-  /*
-  ==========================================
-  VALIDATION
-  ==========================================
-  */
+  
+  // VALIDATION
+
+  
   const isDisabled =
     !selectedCategory ||
     selectedSkills.length === 0 ||
     !userLocation;
 
-  /*
-  ==========================================
-  FIND BUDDY
-  ==========================================
-  */
+
+
+  // FIND BUDDY
+
+  
   const handleFindBuddy = async () => {
 
     if (isDisabled || bookingLoading) return;
@@ -438,7 +438,7 @@ useEffect(() => {
       };
 
       console.log(
-        "📦 BOOKING PAYLOAD:",
+        " BOOKING PAYLOAD:",
         payload
       );
 
@@ -460,7 +460,7 @@ useEffect(() => {
       }
 
       console.log(
-        "✅ BOOKING CREATED:",
+        " BOOKING CREATED:",
         res.data
       );
 
@@ -472,7 +472,7 @@ useEffect(() => {
     } catch (err) {
 
       console.log(
-        "❌ Booking error:",
+        " Booking error:",
         err?.response?.data || err.message
       );
 
@@ -488,11 +488,11 @@ useEffect(() => {
     }
   };
 
-  /*
-  ==========================================
-  LOADING
-  ==========================================
-  */
+  
+ 
+  // LOADING
+  
+  
   if (loading || !userLocation) {
 
     return (
@@ -502,11 +502,11 @@ useEffect(() => {
     );
   }
 
-  /*
-  ==========================================
-  UI
-  ==========================================
-  */
+  
+
+  // UI
+
+  
   return (
     <View style={styles.container}>
 
@@ -523,7 +523,7 @@ useEffect(() => {
 
       </View>
 
-      {/* LOCATION */}
+      {/* { LOCATION } */}
       <TouchableOpacity
         style={styles.locationBox}
         onPress={() =>

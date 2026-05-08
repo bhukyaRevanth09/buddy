@@ -94,7 +94,7 @@ export default function UserRegisterScreen({ navigation }) {
       setLoading(true);
 
       // Send OTP first
-      await axios.post("http://192.168.0.109:9090/api/auth/send-otp", {
+      await axios.post("http://10.112.58.157:9090/api/auth/send-otp", {
         email: form.email,
         password: form.password,
         role: "user",

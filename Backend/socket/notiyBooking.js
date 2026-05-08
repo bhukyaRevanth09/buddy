@@ -14,9 +14,9 @@ export const notifyBookingRoom = (bookingId, event, data = {}) => {
       timestamp: new Date().toISOString()
     });
 
-    console.log(`📡 ${event} -> booking_${bookingId}`);
+    console.log(` ${event} -> booking_${bookingId}`);
 
   } catch (err) {
-    console.log("❌ notifyBookingRoom error:", err.message);
+    console.log(" notifyBookingRoom error:", err.message);
   }
 };

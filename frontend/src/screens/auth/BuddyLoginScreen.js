@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import {
-  View,
   Text,
   TextInput,
   TouchableOpacity,
@@ -10,17 +9,21 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
+  View
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
+
 import { useAuth } from "../../context/AuthContext.js";
 
-// Ensure this IP is correct for your local machine
-const API_URL = "http://192.168.0.109:9090/api/buddy/buddy-login";
+const API_URL = "http://10.112.58.157:9090/api/buddy/buddy-login";
 
 export default function BuddyLoginScreen({ navigation }) {
   const { login } = useAuth();
 
-  const [identifier, setIdentifier] = useState(""); 
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
@@ -28,118 +31,282 @@ export default function BuddyLoginScreen({ navigation }) {
 
   const validate = () => {
     let newErrors = {};
-    if (!identifier) newErrors.identifier = "Email is required";
+    const emailRegex = /^\S+@\S+\.\S+$/;
+
+    if (!identifier.trim()) {
+      newErrors.identifier = "Email is required";
+    } else if (!emailRegex.test(identifier.trim())) {
+      newErrors.identifier = "Enter a valid email address";
+    }
+
     if (!password) {
       newErrors.password = "Password is required";
     } else if (password.length < 6) {
       newErrors.password = "Password must be at least 6 characters";
     }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleLogin = async () => {
     if (!validate()) return;
-    setLoading(true);
-
-    const payload = {
-      email: identifier.trim().toLowerCase(),
-      password,
-      role: "buddy",
-    };
 
     try {
+      setLoading(true);
+
+      const payload = {
+        email: identifier.trim().toLowerCase(),
+        password,
+        role: "buddy"
+      };
+
       const res = await axios.post(API_URL, payload);
-      
+
       if (res?.data?.success) {
-        // ✅ PASS THE WHOLE DATA OBJECT
-        // The AuthContext handles SecureStore internally.
-        await login("buddy", res.data); 
-        // Navigation happens automatically via RootNavigation state change
+        await login("buddy", res.data);
       } else {
         Alert.alert("Login Failed", res.data?.message || "Invalid credentials");
       }
     } catch (error) {
-      const errorMsg = error.response?.data?.message || "Check your internet connection";
-      Alert.alert("Error", errorMsg);
+      console.log("BUDDY LOGIN ERROR:", error?.response?.data || error.message);
+
+      Alert.alert(
+        "Error",
+        error?.response?.data?.message || "Check your internet connection"
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={{ flex: 1 }}
-    >
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Buddy Login</Text>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.mainWrapper}
+      >
+        <ScrollView
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.header}>
+            <Text style={styles.title}>Buddy Login</Text>
+            <Text style={styles.subtitle}>Sign in to continue as a Buddy</Text>
+          </View>
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Email Address</Text>
-          <TextInput
-            placeholder="Enter your email"
-            value={identifier}
-            onChangeText={(text) => {
-              setIdentifier(text);
-              if (errors.identifier) setErrors({ ...errors, identifier: "" });
-            }}
-            style={[styles.input, errors.identifier && styles.errorInput]}
-            autoCapitalize="none"
-          />
-          {errors.identifier && <Text style={styles.errorText}>{errors.identifier}</Text>}
-        </View>
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Email Address</Text>
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.passwordWrapper}>
             <TextInput
-              placeholder="Enter password"
-              secureTextEntry={!showPassword}
-              value={password}
+              placeholder="name@example.com"
+              value={identifier}
               onChangeText={(text) => {
-                setPassword(text);
-                if (errors.password) setErrors({ ...errors, password: "" });
+                setIdentifier(text);
+                if (errors.identifier) {
+                  setErrors((prev) => ({ ...prev, identifier: "" }));
+                }
               }}
-              style={[styles.input, { flex: 1 }, errors.password && styles.errorInput]}
+              style={[styles.input, errors.identifier && styles.errorInput]}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              placeholderTextColor="#ADB5BD"
             />
-            <TouchableOpacity style={styles.eye} onPress={() => setShowPassword(!showPassword)}>
-              <Text style={styles.eyeText}>{showPassword ? "Hide" : "Show"}</Text>
+
+            {errors.identifier && (
+              <Text style={styles.errorText}>{errors.identifier}</Text>
+            )}
+          </View>
+
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Password</Text>
+
+            <View style={styles.passwordWrapper}>
+              <TextInput
+                placeholder="Enter password"
+                secureTextEntry={!showPassword}
+                value={password}
+                onChangeText={(text) => {
+                  setPassword(text);
+                  if (errors.password) {
+                    setErrors((prev) => ({ ...prev, password: "" }));
+                  }
+                }}
+                style={[
+                  styles.input,
+                  { flex: 1 },
+                  errors.password && styles.errorInput
+                ]}
+                autoCapitalize="none"
+                placeholderTextColor="#ADB5BD"
+              />
+
+              <TouchableOpacity
+                style={styles.eyeBtn}
+                onPress={() => setShowPassword(!showPassword)}
+              >
+                <Ionicons
+                  name={showPassword ? "eye-off" : "eye"}
+                  size={22}
+                  color="#6C757D"
+                />
+              </TouchableOpacity>
+            </View>
+
+            {errors.password && (
+              <Text style={styles.errorText}>{errors.password}</Text>
+            )}
+          </View>
+
+          <TouchableOpacity
+            style={[styles.loginBtn, loading && styles.btnDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.btnText}>Login as Buddy</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.footer}>
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate("ForgotPassword", { role: "buddy" })
+              }
+            >
+              <Text style={styles.linkText}>Forgot Password?</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.signupBox}
+              onPress={() => navigation.navigate("BuddyRegister")}
+            >
+              <Text style={styles.footerText}>
+                Don’t have an account?{" "}
+                <Text style={styles.boldLink}>Register</Text>
+              </Text>
             </TouchableOpacity>
           </View>
-          {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
-        </View>
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login as Buddy</Text>}
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => navigation.navigate("BuddyRegister")}>
-          <Text style={styles.link}>Don’t have account? <Text style={styles.boldLink}>Register</Text></Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, justifyContent: "center", padding: 24, backgroundColor: "#fff" },
-  title: { fontSize: 28, fontWeight: "bold", marginBottom: 30, color: "#1a1a1a" },
-  inputContainer: { marginBottom: 20 },
-  label: { fontSize: 14, fontWeight: "600", color: "#444", marginBottom: 8 },
-  input: { borderWidth: 1, borderColor: "#ddd", padding: 14, borderRadius: 12, fontSize: 16, backgroundColor: "#f9f9f9" },
-  passwordWrapper: { flexDirection: "row", alignItems: "center" },
-  errorInput: { borderColor: "#ff4d4d" },
-  errorText: { color: "#ff4d4d", marginTop: 4, fontSize: 13 },
-  button: { backgroundColor: "#000", padding: 18, borderRadius: 12, marginTop: 20, alignItems: "center" },
-  buttonDisabled: { opacity: 0.7 },
-  buttonText: { color: "white", fontSize: 16, fontWeight: "bold" },
-  link: { marginTop: 25, textAlign: "center", color: "#666", fontSize: 15 },
-  boldLink: { color: "#007AFF", fontWeight: "bold" },
-  eye: { position: "absolute", right: 15 },
-  eyeText: { color: "#007AFF", fontWeight: "600" },
+  mainWrapper: {
+    flex: 1,
+    backgroundColor: "#fff"
+  },
+
+  container: {
+    flexGrow: 1,
+    padding: 25,
+    justifyContent: "center"
+  },
+
+  header: {
+    marginBottom: 35
+  },
+
+  title: {
+    fontSize: 30,
+    fontWeight: "bold",
+    color: "#212529"
+  },
+
+  subtitle: {
+    fontSize: 16,
+    color: "#6C757D",
+    marginTop: 5
+  },
+
+  fieldGroup: {
+    marginBottom: 20
+  },
+
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#495057",
+    marginBottom: 8
+  },
+
+  input: {
+    height: 55,
+    borderWidth: 1,
+    borderColor: "#DEE2E6",
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    fontSize: 16,
+    backgroundColor: "#F8F9FA",
+    color: "#000"
+  },
+
+  passwordWrapper: {
+    flexDirection: "row",
+    alignItems: "center"
+  },
+
+  eyeBtn: {
+    position: "absolute",
+    right: 15
+  },
+
+  errorInput: {
+    borderColor: "#DC3545"
+  },
+
+  errorText: {
+    color: "#DC3545",
+    fontSize: 12,
+    marginTop: 5,
+    fontWeight: "500"
+  },
+
+  loginBtn: {
+    backgroundColor: "#000",
+    height: 55,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 10
+  },
+
+  btnDisabled: {
+    opacity: 0.7
+  },
+
+  btnText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "bold"
+  },
+
+  footer: {
+    marginTop: 30,
+    alignItems: "center"
+  },
+
+  linkText: {
+    color: "#007AFF",
+    fontWeight: "600"
+  },
+
+  signupBox: {
+    marginTop: 20
+  },
+
+  footerText: {
+    color: "#6C757D",
+    fontSize: 14
+  },
+
+  boldLink: {
+    color: "#007AFF",
+    fontWeight: "bold"
+  }
 });

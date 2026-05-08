@@ -19,20 +19,20 @@ export const initSocket = (server) => {
   });
 
   /*
-  ==========================================
+
   SOCKET AUTH
-  ==========================================
+
   */
 
   io.use(async (socket, next) => {
     try {
-      console.log("\n====================================");
-      console.log("🔐 SOCKET AUTH");
+      
+      console.log(" SOCKET AUTH");
 
       const token = socket.handshake.auth?.token;
 
       if (!token) {
-        console.log("❌ TOKEN MISSING");
+        console.log(" TOKEN MISSING");
         return next(new Error("Unauthorized"));
       }
 
@@ -45,12 +45,12 @@ export const initSocket = (server) => {
       socket.role = decoded.role;
       socket.user = decoded;
 
-      console.log("✅ TOKEN VERIFIED:", socket.userId);
+      console.log(" TOKEN VERIFIED:", socket.userId);
 
       next();
 
     } catch (err) {
-      console.log("❌ SOCKET AUTH ERROR", err);
+      console.log(" SOCKET AUTH ERROR", err);
       next(new Error("Unauthorized"));
     }
   });
@@ -63,27 +63,27 @@ export const initSocket = (server) => {
 
   io.on("connection", async (socket) => {
 
-    console.log("\n====================================");
-    console.log("🟢 SOCKET CONNECTED");
-    console.log("🧩 SOCKET ID:", socket.id);
-    console.log("👤 USER:", socket.userId);
+ 
+    console.log(" SOCKET CONNECTED");
+    console.log(" SOCKET ID:", socket.id);
+    console.log(" USER:", socket.userId);
 
     try {
 
       /*
-      ====================================
+
       PERSONAL ROOM
-      ====================================
+   
       */
 
       socket.join(socket.userId.toString());
 
-      console.log("🏠 JOINED ROOM:", socket.userId);
+      console.log(" JOINED ROOM:", socket.userId);
 
       /*
-      ====================================
+ 
       STORE SOCKET
-      ====================================
+
       */
 
       await redis.set(
@@ -94,9 +94,9 @@ export const initSocket = (server) => {
       );
 
       /*
-      ====================================
+     
       BUDDY ONLINE
-      ====================================
+      
       */
 
       if (socket.role === "buddy") {
@@ -111,10 +111,10 @@ export const initSocket = (server) => {
           }
         );
 
-        console.log("🟢 BUDDY ONLINE");
+        console.log(" BUDDY ONLINE");
 
         /*
-        🔥 BROADCAST STATUS
+         BROADCAST STATUS
         */
 
         io.emit(
@@ -128,12 +128,6 @@ export const initSocket = (server) => {
         );
       }
 
-      /*
-      ====================================
-      READY EVENT
-      ====================================
-      */
-
       socket.emit(
         SOCKET_EVENTS.CONNECTION_READY,
         {
@@ -142,11 +136,7 @@ export const initSocket = (server) => {
         }
       );
 
-      /*
-      ====================================
-      JOIN BOOKING ROOM (OPTIONAL)
-      ====================================
-      */
+     
 
       socket.on(SOCKET_EVENTS.BOOKING_JOIN, ({ bookingId }) => {
         const room = `booking:${bookingId}`;
@@ -159,7 +149,7 @@ export const initSocket = (server) => {
         const room = `booking:${bookingId}`;
         socket.leave(room);
 
-        console.log("📤 LEFT BOOKING:", room);
+        console.log(" LEFT BOOKING:", room);
       });
 
 
@@ -220,16 +210,14 @@ socket.on(SOCKET_EVENTS.LOCATION_UPDATE_SEND, async (data) => {
     console.log("❌ LOCATION SOCKET ERROR", err);
   }
 });
-      /*
-      ====================================
-      DISCONNECT
-      ====================================
-      */
+    
+      // DISCONNECT
+     
 
       socket.on("disconnect", async (reason) => {
 
-        console.log("\n🔴 SOCKET DISCONNECTED");
-        console.log("📄 REASON:", reason);
+        console.log(" SOCKET DISCONNECTED");
+        console.log(" REASON:", reason);
 
         try {
 
@@ -253,10 +241,10 @@ socket.on(SOCKET_EVENTS.LOCATION_UPDATE_SEND, async (data) => {
               }
             );
 
-            console.log("⚫ BUDDY OFFLINE");
+            console.log(" BUDDY OFFLINE");
 
             /*
-            🔥 BROADCAST STATUS
+             BROADCAST STATUS
             */
 
             io.emit(
@@ -271,12 +259,12 @@ socket.on(SOCKET_EVENTS.LOCATION_UPDATE_SEND, async (data) => {
           }
 
         } catch (err) {
-          console.log("❌ DISCONNECT ERROR", err);
+          console.log("DISCONNECT ERROR", err);
         }
       });
 
     } catch (err) {
-      console.log("❌ SOCKET CONNECTION ERROR", err);
+      console.log("SOCKET CONNECTION ERROR", err);
       socket.disconnect(true);
     }
   });

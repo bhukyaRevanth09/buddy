@@ -25,6 +25,7 @@ from "../Routes/bookingRoute.js";
 
 import locationRouter from "../Routes/locationRouter.js";
 
+import reviewRouter from "../Routes/reviewRoute.js";
 dotenv.config({ quiet: true });
 
 const app = express();
@@ -81,10 +82,13 @@ app.use("/api/user", userRouter);
 app.use("/api/booking", bookingRouter);
 
 app.use("/api/location",locationRouter);
+
+app.use("/api/reviews",reviewRouter)
+
 /*
-=========================
+
 ERROR HANDLER
-=========================
+
 */
 
 app.use(errorHandler);

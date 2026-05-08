@@ -16,19 +16,16 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
 
-// Context
 import { useAuth } from "../../context/AuthContext.js";
 
 export default function UserLoginScreen({ navigation }) {
   const { login } = useAuth();
 
-  // Form State
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Input handler
   const handleInputChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) setErrors((prev) => ({ ...prev, [field]: "" }));
@@ -58,7 +55,7 @@ export default function UserLoginScreen({ navigation }) {
 
     try {
       const res = await axios.post(
-        "http://192.168.0.109:9090/api/user/user-login",
+        "http://10.112.58.157:9090/api/user/user-login",
         {
           email: formData.email.trim().toLowerCase(),
           password: formData.password,
@@ -99,7 +96,6 @@ export default function UserLoginScreen({ navigation }) {
             <Text style={styles.subtitle}>Sign in to continue as a User</Text>
           </View>
 
-          {/* Email Field */}
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Email Address</Text>
             <TextInput
@@ -116,7 +112,6 @@ export default function UserLoginScreen({ navigation }) {
             )}
           </View>
 
-          {/* Password Field */}
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Password</Text>
             <View style={styles.passwordWrapper}>
@@ -151,7 +146,6 @@ export default function UserLoginScreen({ navigation }) {
             )}
           </View>
 
-          {/* Login Button */}
           <TouchableOpacity
             style={[styles.loginBtn, loading && styles.btnDisabled]}
             onPress={handleLogin}
@@ -164,17 +158,18 @@ export default function UserLoginScreen({ navigation }) {
             )}
           </TouchableOpacity>
 
-          {/* Footer */}
           <View style={styles.footer}>
             <TouchableOpacity
-              onPress={() => navigation.navigate("ForgotPassword")}
+              onPress={() =>
+                navigation.navigate("ForgotPassword", { role: "user" })
+              }
             >
               <Text style={styles.linkText}>Forgot Password?</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.signupBox}
-              onPress={() => navigation.navigate("Home")}
+              onPress={() => navigation.navigate("UserRegister")}
             >
               <Text style={styles.footerText}>
                 Don't have an account?{" "}

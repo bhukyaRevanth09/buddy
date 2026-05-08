@@ -8,7 +8,7 @@ export default function OneTimeNumber({ length = 6, onChange }) {
   const handleChange = (text, index) => {
     if (text.length > 1) return;
 
-    // ✅ SAFE fallback
+    //  SAFE fallback
     const currentOtp = otp || Array(length).fill("");
 
     const newOtp = [...currentOtp];
@@ -17,7 +17,7 @@ export default function OneTimeNumber({ length = 6, onChange }) {
     setOtp(newOtp);
 
 
-    // ✅ SAFE join
+    //  SAFE join
     onChange(newOtp.join(""));
 
     if (text && index < length - 1) {

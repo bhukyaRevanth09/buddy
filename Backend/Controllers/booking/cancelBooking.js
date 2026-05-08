@@ -7,24 +7,24 @@ import redis from "../../Config/redis.js";
 
 export const cancelBooking = async (req, res, next) => {
   try {
-    console.log("\n====================================");
+ 
     console.log("❌ CANCEL BOOKING");
-    console.log("====================================");
+    
 
     const io = getIO();
 
     const { bookingId, reason } = req.body;
-    const userId = req.userId; // ✅ FIXED
+    const userId = req.userId; //  FIXED
     const role = req.userRole || req.user?.role || "user";
 
-    console.log("📦 BOOKING ID:", bookingId);
-    console.log("👤 USER:", userId);
-    console.log("🎭 ROLE:", role);
+    console.log(" BOOKING ID:", bookingId);
+    console.log(" USER:", userId);
+    console.log(" ROLE:", role);
 
     /*
-    =========================
+  
     VALIDATION
-    =========================
+ 
     */
 
     if (!bookingId) {
@@ -51,9 +51,9 @@ export const cancelBooking = async (req, res, next) => {
     }
 
     /*
-    =========================
+    
     UPDATE BOOKING
-    =========================
+   
     */
 
     booking.status = "cancelled";
@@ -66,20 +66,20 @@ export const cancelBooking = async (req, res, next) => {
 
     await booking.save();
 
-    console.log("📝 BOOKING UPDATED");
+    console.log(" BOOKING UPDATED");
 
     /*
-    =========================
+
     STOP REDIS FLOW
-    =========================
+
     */
 
-    await redis.del(`booking:pending:${bookingId}`); // ✅ FIXED KEY
+    await redis.del(`booking:pending:${bookingId}`); //  FIXED KEY
 
     /*
-    =========================
+  
     FREE BUDDY
-    =========================
+ 
     */
 
     if (booking.buddy) {
@@ -90,21 +90,21 @@ export const cancelBooking = async (req, res, next) => {
 
       await unlockBuddy(booking.buddy.toString());
 
-      console.log("🟢 BUDDY FREED");
+      console.log("BUDDY FREED");
     }
 
     /*
-    =========================
+
     SOCKET ROOMS
-    =========================
+
     */
 
     const bookingRoom = `booking:${bookingId}`;
 
     /*
-    =========================
+  
     USER NOTIFICATION
-    =========================
+ 
     */
 
     io.to(booking.user.toString()).emit(
@@ -117,13 +117,13 @@ export const cancelBooking = async (req, res, next) => {
     );
 
     /*
-    =========================
+
     BUDDY NOTIFICATION
-    =========================
+  
     */
 
     if (booking.buddy) {
-      io.to(booking.buddy.toString()).emit( // ✅ safer than buddy:<id>
+      io.to(booking.buddy.toString()).emit( //  safer than buddy:<id>
         SOCKET_EVENTS.BOOKING_CANCELLED,
         {
           bookingId,
@@ -134,9 +134,9 @@ export const cancelBooking = async (req, res, next) => {
     }
 
     /*
-    =========================
+
     BOOKING ROOM EVENTS
-    =========================
+
     */
 
     io.to(bookingRoom).emit(
@@ -156,9 +156,9 @@ export const cancelBooking = async (req, res, next) => {
     );
 
     /*
-    =========================
+   
     CLEAN REDIS ACTIVE STATE
-    =========================
+    
     */
 
     await redis.del(`booking:active:${bookingId}`);
@@ -177,13 +177,11 @@ export const cancelBooking = async (req, res, next) => {
       );
     }
 
-    console.log("🧹 REDIS CLEANED");
+    console.log(" REDIS CLEANED");
 
-    /*
-    =========================
-    RESPONSE
-    =========================
-    */
+ 
+    // RESPONSE
+   
 
     return res.json({
       success: true,
@@ -191,7 +189,7 @@ export const cancelBooking = async (req, res, next) => {
     });
 
   } catch (error) {
-    console.log("❌ CANCEL ERROR:", error);
+    console.log(" CANCEL ERROR:", error);
     next(error);
   }
 };

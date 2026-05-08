@@ -13,9 +13,9 @@ export const notifyUser = (userId, event, data = {}) => {
       timestamp: new Date().toISOString()
     });
 
-    console.log(`📤 ${event} -> USER ${userId}`);
+    console.log(` ${event} -> USER ${userId}`);
 
   } catch (err) {
-    console.log("❌ notifyUser error:", err.message);
+    console.log(" notifyUser error:", err.message);
   }
 };

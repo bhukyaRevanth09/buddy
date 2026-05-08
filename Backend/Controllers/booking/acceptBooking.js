@@ -9,9 +9,6 @@ export const acceptBooking = async (req, res) => {
   let session = null;
 
   try {
-    console.log("\n====================================");
-    console.log("✅ ACCEPT BOOKING REQUEST");
-    console.log("====================================");
 
     const { bookingId } = req.body;
     const buddyId = req.userId;
@@ -25,12 +22,7 @@ export const acceptBooking = async (req, res) => {
 
     const io = getIO();
 
-    /*
-    ====================================
-    CHECK BUDDY
-    ====================================
-    */
-
+ 
     const buddy = await buddyModel.findById(buddyId);
 
     if (!buddy) {
@@ -40,11 +32,6 @@ export const acceptBooking = async (req, res) => {
       });
     }
 
-    /*
-    ====================================
-    PREVENT DOUBLE ACCEPT
-    ====================================
-    */
 
     const accepted = await redis.set(
       `booking:accept:${bookingId}`,
@@ -61,11 +48,7 @@ export const acceptBooking = async (req, res) => {
       });
     }
 
-    /*
-    ====================================
-    GET PENDING
-    ====================================
-    */
+
 
     const raw = await redis.get(
       `booking:pending:${bookingId}`
@@ -82,21 +65,12 @@ export const acceptBooking = async (req, res) => {
 
     const state = JSON.parse(raw);
 
-    /*
-    ====================================
-    START TRANSACTION
-    ====================================
-    */
+  
 
     session = await mongoose.startSession();
     session.startTransaction();
 
-    /*
-    ====================================
-    CREATE BOOKING
-    ====================================
-    */
-
+  
     const [booking] = await instantBookingModel.create(
       [
         {
@@ -113,11 +87,6 @@ export const acceptBooking = async (req, res) => {
       { session }
     );
 
-    /*
-    ====================================
-    UPDATE BUDDY
-    ====================================
-    */
 
     const updatedBuddy =
       await buddyModel.findOneAndUpdate(
@@ -147,11 +116,7 @@ export const acceptBooking = async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
-    /*
-    ====================================
-    REDIS ACTIVE STATE
-    ====================================
-    */
+   
 
     await redis.set(
       `booking:active:${booking._id}`,
@@ -179,23 +144,15 @@ export const acceptBooking = async (req, res) => {
       86400
     );
 
-    /*
-    ====================================
-    CLEANUP
-    ====================================
-    */
+  
 
     await redis.del(`booking:pending:${bookingId}`);
 
-    /*
-    ====================================
-    SOCKET EVENTS
-    ====================================
-    */
+
 
     const bookingRoom = `booking:${booking._id}`;
 
-    // 🔵 Join rooms
+
     io.sockets.sockets.forEach((socket) => {
       if (
         socket.userId?.toString() ===
@@ -207,11 +164,6 @@ export const acceptBooking = async (req, res) => {
       }
     });
 
-    /*
-    ====================================
-    USER EVENT
-    ====================================
-    */
 
     io.to(state.user.toString()).emit(
       SOCKET_EVENTS.BOOKING_ACCEPTED,
@@ -228,11 +180,6 @@ export const acceptBooking = async (req, res) => {
       }
     );
 
-    /*
-    ====================================
-    CANCEL FOR OTHER BUDDIES
-    ====================================
-    */
 
     if (state.buddies?.length) {
       state.buddies.forEach((b) => {
@@ -249,11 +196,6 @@ export const acceptBooking = async (req, res) => {
       });
     }
 
-    /*
-    ====================================
-    BOOKING ROOM EVENT
-    ====================================
-    */
 
     io.to(bookingRoom).emit(
       SOCKET_EVENTS.BOOKING_CONFIRMED,
@@ -264,21 +206,16 @@ export const acceptBooking = async (req, res) => {
       }
     );
 
-    console.log("📡 SOCKET EVENTS SENT");
+    console.log(" SOCKET EVENTS SENT");
 
-    /*
-    ====================================
-    RESPONSE
-    ====================================
-    */
-
+  
     return res.json({
       success: true,
       message: "Booking accepted successfully",
       bookingId: booking._id.toString(),
     });
   } catch (err) {
-     console.log("❌ ACCEPT BOOKING ERROR:", err);
+     console.log(" ACCEPT BOOKING ERROR:", err);
 
   try {
     if (session) {
@@ -304,7 +241,7 @@ export const acceptBooking = async (req, res) => {
       });
     }
   } catch (cleanupErr) {
-    console.log("❌ ACCEPT CLEANUP ERROR:", cleanupErr);
+    console.log(" ACCEPT CLEANUP ERROR:", cleanupErr);
   }
 
   return res.status(500).json({

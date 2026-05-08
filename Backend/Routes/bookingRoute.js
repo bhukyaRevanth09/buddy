@@ -14,11 +14,9 @@ import { getActiveBooking } from "../Controllers/booking/getActiveBooking.js";
 import { getBookingHistory } from "../Controllers/booking/getBookingHistory.js";
 const bookingRouter = express.Router();
 
-/*
-=========================
-USER
-=========================
-*/
+
+// USER
+
 
 bookingRouter.post(
   "/request",
@@ -26,11 +24,11 @@ bookingRouter.post(
   requestBooking
 );
 
-/*
-=========================
-BUDDY
-=========================
-*/
+
+
+// BUDDY
+
+
 
 bookingRouter.post(
   "/accept",
@@ -61,12 +59,8 @@ bookingRouter.post(
 // USER BOOKINGS
 bookingRouter.get("/active", authMiddleware, getActiveBooking);
 bookingRouter.get("/history", authMiddleware, getBookingHistory);
-/*
-=========================
-CANCEL
-=========================
-*/
 
+// CANCEL
 bookingRouter.post(
   "/cancel",
   authMiddleware,

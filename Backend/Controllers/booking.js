@@ -7,9 +7,9 @@ import { SOCKET_EVENTS } from "../constants/backendSocketEvents.js";
 import mongoose from "mongoose";
 
 /*
-=========================================
+
 TOGGLE ONLINE STATUS
-=========================================
+
 */
 export const toggleOnlineStatus = async (req, res) => {
   try {
@@ -17,17 +17,17 @@ export const toggleOnlineStatus = async (req, res) => {
     const { status } = req.body;
 
     /*
-    =========================
+  
     NORMALIZE STATUS
-    =========================
+
     */
     const isOnline =
       status === "available" || status === true;
 
     /*
-    =========================
+ 
     UPDATE BUDDY
-    =========================
+    
     */
     const updatedBuddy =
       await buddyModel.findByIdAndUpdate(
@@ -52,9 +52,9 @@ export const toggleOnlineStatus = async (req, res) => {
     }
 
     /*
-    =========================
+
     REDIS CACHE
-    =========================
+   
     */
     if (isOnline) {
       await redis.set(
@@ -68,9 +68,9 @@ export const toggleOnlineStatus = async (req, res) => {
     }
 
     /*
-    =========================
+   
     SOCKET EVENT
-    =========================
+    
     */
     const io = getIO();
 
@@ -88,11 +88,7 @@ export const toggleOnlineStatus = async (req, res) => {
       }
     );
 
-    /*
-    =========================
-    RESPONSE
-    =========================
-    */
+  
     return res.json({
       success: true,
       isOnline: updatedBuddy.isOnline,
@@ -102,7 +98,7 @@ export const toggleOnlineStatus = async (req, res) => {
 
   } catch (error) {
     console.log(
-      "❌ TOGGLE STATUS ERROR:",
+      "TOGGLE STATUS ERROR:",
       error
     );
 
@@ -113,11 +109,7 @@ export const toggleOnlineStatus = async (req, res) => {
   }
 };
 
-/*
-=========================================
-BUDDY DASHBOARD
-=========================================
-*/
+
 export const getBuddyDashboard = async (req, res) => {
   try {
     const buddyId = req.userId;
@@ -135,11 +127,7 @@ export const getBuddyDashboard = async (req, res) => {
       });
     }
 
-    /*
-    =========================
-    GET BUDDY DATA
-    =========================
-    */
+
     const buddy =
       await buddyModel
         .findById(buddyId)
@@ -156,11 +144,7 @@ export const getBuddyDashboard = async (req, res) => {
       });
     }
 
-    /*
-    =========================
-    COMPLETED JOBS
-    =========================
-    */
+
     const completedJobs =
       await instantBookingModel.countDocuments(
         {
@@ -169,11 +153,9 @@ export const getBuddyDashboard = async (req, res) => {
         }
       );
 
-    /*
-    =========================
-    ACTIVE BOOKING
-    =========================
-    */
+    
+    // ACTIVE BOOKING
+   
     const activeBooking =
       await instantBookingModel
         .findOne({
@@ -189,12 +171,11 @@ export const getBuddyDashboard = async (req, res) => {
         .populate("user", "name phone")
         .lean();
 
-    /*
-    =========================
-    OPTIONAL: EMIT DASHBOARD UPDATE
-    (Useful for real-time UI)
-    =========================
-    */
+    
+  
+    // OPTIONAL: EMIT DASHBOARD UPDATE
+    // (Useful for real-time UI)
+
     const io = getIO();
 
     io.to(buddyId.toString()).emit(
@@ -208,11 +189,11 @@ export const getBuddyDashboard = async (req, res) => {
       }
     );
 
-    /*
-    =========================
-    RESPONSE
-    =========================
-    */
+
+
+    // RESPONSE
+
+  
     return res.json({
       success: true,
       data: {
@@ -240,7 +221,7 @@ export const getBuddyDashboard = async (req, res) => {
 
   } catch (err) {
     console.error(
-      "❌ DASHBOARD_ERROR:",
+      " DASHBOARD_ERROR:",
       err
     );
 

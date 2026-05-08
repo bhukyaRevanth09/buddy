@@ -4,15 +4,12 @@ import { SOCKET_EVENTS } from "../../constants/backendSocketEvents.js";
 
 export const arrivedBooking = async (req, res, next) => {
   try {
-    console.log("\n====================================");
-    console.log("📍 BUDDY ARRIVED");
-    console.log("====================================");
-
+ 
     const { bookingId } = req.body;
     const buddyId = req.userId;
 
-    console.log("📦 BOOKING ID:", bookingId);
-    console.log("🧑 BUDDY ID:", buddyId);
+    console.log(" BOOKING ID:", bookingId);
+    console.log(" BUDDY ID:", buddyId);
 
     if (!bookingId) {
       return res.status(400).json({
@@ -30,9 +27,9 @@ export const arrivedBooking = async (req, res, next) => {
       });
     }
 
-    console.log("📌 CURRENT STATUS:", booking.status);
-    console.log("📌 BOOKING USER:", booking.user);
-    console.log("📌 BOOKING BUDDY:", booking.buddy);
+    console.log(" CURRENT STATUS:", booking.status);
+    console.log(" BOOKING USER:", booking.user);
+    console.log(" BOOKING BUDDY:", booking.buddy);
 
     if (!booking.buddy || booking.buddy.toString() !== buddyId.toString()) {
       return res.status(403).json({
@@ -48,23 +45,17 @@ export const arrivedBooking = async (req, res, next) => {
       });
     }
 
-    /*
-    ========================
-    UPDATE BOOKING
-    ========================
-    */
+ 
     booking.status = "arrived";
     booking.arrivedAt = new Date();
 
     await booking.save();
 
-    console.log("✅ BOOKING MARKED ARRIVED");
+    console.log("BOOKING MARKED ARRIVED");
 
-    /*
-    ========================
-    SOCKET EVENTS
-    ========================
-    */
+ 
+    // SOCKET EVENTS
+    
     const io = getIO();
     const bookingRoom = `booking:${bookingId}`;
 
@@ -77,7 +68,7 @@ export const arrivedBooking = async (req, res, next) => {
         socketUserId === buddyId.toString()
       ) {
         socket.join(bookingRoom);
-        console.log("✅ Socket joined room:", {
+        console.log(" Socket joined room:", {
           socketId: socket.id,
           userId: socketUserId,
           room: bookingRoom,
@@ -85,8 +76,8 @@ export const arrivedBooking = async (req, res, next) => {
       }
     });
 
-    console.log("📡 EMIT BUDDY_ARRIVED:", SOCKET_EVENTS.BUDDY_ARRIVED);
-    console.log("📡 EMIT STATUS_UPDATE:", SOCKET_EVENTS.STATUS_UPDATE);
+    console.log(" EMIT BUDDY_ARRIVED:", SOCKET_EVENTS.BUDDY_ARRIVED);
+    console.log(" EMIT STATUS_UPDATE:", SOCKET_EVENTS.STATUS_UPDATE);
 
     // Direct user event
     io.to(booking.user.toString()).emit(SOCKET_EVENTS.BUDDY_ARRIVED, {
@@ -104,7 +95,7 @@ export const arrivedBooking = async (req, res, next) => {
       buddyId,
     });
 
-    // Room fallback event
+  
     io.to(bookingRoom).emit(SOCKET_EVENTS.STATUS_UPDATE, {
       bookingId,
       status: "arrived",
@@ -112,9 +103,9 @@ export const arrivedBooking = async (req, res, next) => {
       buddyId,
     });
 
-    console.log("📡 BUDDY_ARRIVED SENT TO USER:", booking.user.toString());
-    console.log("📡 BUDDY_ARRIVED SENT TO BUDDY:", buddyId.toString());
-    console.log("📡 STATUS_UPDATE SENT TO ROOM:", bookingRoom);
+    console.log(" BUDDY_ARRIVED SENT TO USER:", booking.user.toString());
+    console.log(" BUDDY_ARRIVED SENT TO BUDDY:", buddyId.toString());
+    console.log(" STATUS_UPDATE SENT TO ROOM:", bookingRoom);
 
     return res.json({
       success: true,
@@ -126,7 +117,7 @@ export const arrivedBooking = async (req, res, next) => {
       },
     });
   } catch (err) {
-    console.log("❌ ARRIVED ERROR:", err);
+    console.log(" ARRIVED ERROR:", err);
     next(err);
   }
 };

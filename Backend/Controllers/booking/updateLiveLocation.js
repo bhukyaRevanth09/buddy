@@ -2,31 +2,31 @@ import instantBookingModel from "../../models/instantBooking.js";
 import { getIO } from "../../socket/socket.js";
 import { SOCKET_EVENTS } from "../../constants/backendSocketEvents.js";
 /*
-========================================
+
 UPDATE LIVE LOCATION (BUDDY)
 POST /api/location/update
-========================================
+
 */
 export const updateLiveLocation = async (req, res) => {
   try {
     const { bookingId, lat, lng } = req.body;
 
-    console.log("\n📍 LOCATION UPDATE REQUEST");
-    console.log("👉 bookingId:", bookingId);
-    console.log("👉 lat:", lat);
-    console.log("👉 lng:", lng);
+    console.log("\n LOCATION UPDATE REQUEST");
+    console.log("bookingId:", bookingId);
+    console.log(" lat:", lat);
+    console.log(" lng:", lng);
 
     const booking = await instantBookingModel.findById(bookingId);
 
     if (!booking) {
-      console.log("❌ BOOKING NOT FOUND");
+      console.log(" BOOKING NOT FOUND");
       return res.status(404).json({
         success: false,
         message: "Booking not found"
       });
     }
 
-    console.log("✅ BOOKING FOUND:", booking._id);
+    console.log(" BOOKING FOUND:", booking._id);
 
     booking.liveLocation = {
       latitude: lat,
@@ -62,10 +62,10 @@ export const updateLiveLocation = async (req, res) => {
 };
 
 /*
-========================================
+
 GET LIVE LOCATION (USER / TRACKING)
 GET /api/location/:bookingId
-========================================
+
 */
 export const getLiveLocation = async (req, res) => {
   try {
@@ -86,7 +86,7 @@ export const getLiveLocation = async (req, res) => {
     });
 
   } catch (err) {
-    console.log("❌ getLiveLocation error:", err);
+    console.log(" getLiveLocation error:", err);
 
     res.status(500).json({
       success: false

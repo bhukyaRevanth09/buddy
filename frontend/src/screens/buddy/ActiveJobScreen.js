@@ -263,14 +263,14 @@ export default function ActiveJobScreen({ route, navigation }) {
     try {
       setStatusLoading(true);
 
-      console.log("⚫ COMPLETE WORK BUTTON PRESSED");
-      console.log("📨 REQUESTING COMPLETE OTP:", { bookingId });
+      console.log("COMPLETE WORK BUTTON PRESSED");
+      console.log("REQUESTING COMPLETE OTP:", { bookingId });
 
       const res = await api.post("/booking/complete", {
         bookingId
       });
 
-      console.log("📡 COMPLETE OTP RESPONSE:", res.data);
+      console.log(" COMPLETE OTP RESPONSE:", res.data);
 
       if (res?.data?.success && res?.data?.otpRequired) {
         setOtpModal(true);
@@ -285,7 +285,7 @@ export default function ActiveJobScreen({ route, navigation }) {
 
       Alert.alert("Error", res?.data?.message || "Failed to request OTP");
     } catch (err) {
-      console.log("❌ COMPLETE OTP REQUEST ERROR:", err?.response?.data || err.message);
+      console.log(" COMPLETE OTP REQUEST ERROR:", err?.response?.data || err.message);
 
       Alert.alert(
         "Error",
@@ -310,13 +310,13 @@ export default function ActiveJobScreen({ route, navigation }) {
         otp: completeOtp.trim()
       };
 
-      console.log("\n================ VERIFY COMPLETE OTP ================");
-      console.log("📌 Payload:", payload);
-      console.log("=====================================================\n");
+    
+      console.log("otp Payload:", payload);
+      
 
       const res = await api.post("/booking/complete", payload);
 
-      console.log("✅ COMPLETE VERIFY RESPONSE:", res.data);
+      console.log(" COMPLETE VERIFY RESPONSE:", res.data);
 
       if (res?.data?.success) {
         setOtpModal(false);
@@ -330,7 +330,7 @@ export default function ActiveJobScreen({ route, navigation }) {
 
       Alert.alert("Error", res?.data?.message || "Invalid OTP");
     } catch (err) {
-      console.log("❌ COMPLETE OTP VERIFY ERROR:", err?.response?.data || err.message);
+      console.log(" COMPLETE OTP VERIFY ERROR:", err?.response?.data || err.message);
 
       Alert.alert(
         "Verification failed",
@@ -391,7 +391,7 @@ export default function ActiveJobScreen({ route, navigation }) {
             mode="DRIVING"
             resetOnChange={false}
             onReady={(result) => {
-              console.log("✅ GOOGLE ROUTE READY:", {
+              console.log(" GOOGLE ROUTE READY:", {
                 distance: result.distance,
                 duration: result.duration
               });
@@ -410,7 +410,7 @@ export default function ActiveJobScreen({ route, navigation }) {
               });
             }}
             onError={(errorMessage) => {
-              console.log("❌ GOOGLE ROUTE ERROR:", errorMessage);
+              console.log(" GOOGLE ROUTE ERROR:", errorMessage);
             }}
           />
         )}

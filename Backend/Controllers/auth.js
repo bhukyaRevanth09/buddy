@@ -20,42 +20,41 @@ export const userReg = async (req, res, next) => {
       isActive = true,
       walletBalance = 0,
       address,
-      geoLocation, // expects { latitude, longitude } from frontend
+      geoLocation, 
     } = req.body;
 
-    // 1️⃣ Validate required fields
+
     if (!name || !email || !password || !phone) {
       return next({ statusCode: 400, message: "Required fields missing" });
     }
 
-    // 2️⃣ Check if user exists
+
     const existingUser = await userModel.findOne({ email });
     if (existingUser) {
       return next({ statusCode: 409, message: "User already exists" });
     }
 
-    // 3️⃣ Hash password
+
     const hashedPassword = await passwordHashing(password);
 
-    // 4️⃣ Prepare geoLocation for MongoDB
+
     let geoPoint = null;
     if (geoLocation?.latitude && geoLocation?.longitude) {
       geoPoint = {
         type: "Point",
         coordinates: [
-          parseFloat(geoLocation.longitude), // longitude first
-          parseFloat(geoLocation.latitude),  // latitude second
+          parseFloat(geoLocation.longitude), 
+          parseFloat(geoLocation.latitude),  
         ],
       };
     } else {
-      // default fallback
       geoPoint = {
         type: "Point",
         coordinates: [0, 0],
       };
     }
 
-    // 5️⃣ Create user
+
     const newUser = await userModel.create({
       name,
       email,
@@ -72,12 +71,12 @@ export const userReg = async (req, res, next) => {
       return next({ statusCode: 500, message: "Failed to save user" });
     }
 
-    // 6️⃣ Generate tokens
+
     const id = newUser._id;
     const accessToken = TokenSetter({ id, role });
     const refreshTokenValue = refreshTokenSetter({ id, role });
 
-    // 7️⃣ Send response
+
     return res.status(201).json({
       success: true,
       accessToken,
@@ -411,54 +410,101 @@ export const changePassword = async (req, res, next) => {
 };
 
 
-export const resetPasswordOtp = async (req, res, next) => {
 
+
+export const resetPassword = async (req, res, next) => {
+  console.log(req.body)
   try {
-    const { email, otp, newPassword, role } = req.body;
+    let { email, otp, newPassword, role } = req.body;
 
-    // 1. Validation
     if (!email || !otp || !newPassword || !role) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
+      return res.status(400).json({
+        success: false,
+        message: "Email, OTP, password and role are required"
+      });
     }
 
-    // 2. Identify Model
-    const Model = role === "user" ? userModel : buddyModel;
+    email = email.trim().toLowerCase();
+    role = role.trim().toLowerCase();
 
-    // 3. Find OTP in REDIS (Not MongoDB)
-    const key = `otp:${email}`;
-    const storedOtp = await redis.get(key);
-
-    // 4. Verify Existence and Match
-    if (!storedOtp) {
-      return res.status(400).json({ success: false, message: "OTP expired or not found" });
+    if (!["user", "buddy"].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid role"
+      });
     }
 
-    if (String(storedOtp) !== String(otp)) {
-      return res.status(400).json({ success: false, message: "Invalid OTP code" });
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters"
+      });
     }
 
-    // 5. Find the User Account
-    const account = await Model.findOne({ email: email.toLowerCase() });
+    const Model = role === "buddy" ? buddyModel : userModel;
+
+    const account = await Model.findOne({ email });
+
     if (!account) {
-      return res.status(404).json({ success: false, message: "Account not found" });
+      return res.status(404).json({
+        success: false,
+        message: role === "buddy" ? "Buddy not found" : "User not found"
+      });
     }
 
-    // 6. Hash New Password & Save
-    const salt = await bcrypt.genSalt(10);
-    account.password = await bcrypt.hash(newPassword, salt);
+    const otpKey = `otp:${role}:forgot:${email}`;
+    const attemptKey = `otp_attempt:${role}:forgot:${email}`;
+
+    const savedOtp = await redis.get(otpKey);
+
+    if (!savedOtp) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP expired. Please request a new OTP"
+      });
+    }
+
+    let attempts = await redis.get(attemptKey);
+    attempts = attempts ? Number(attempts) : 0;
+
+    if (attempts >= 5) {
+      await redis.del(otpKey);
+
+      return res.status(429).json({
+        success: false,
+        message: "Too many wrong attempts. Please request a new OTP"
+      });
+    }
+
+    if (savedOtp !== otp.toString()) {
+      await redis.incr(attemptKey);
+      await redis.expire(attemptKey, 300);
+
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP"
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    account.password = hashedPassword;
     await account.save();
 
-    // 7. Cleanup: Delete used OTP from Redis
-    await redis.del(key);
+    await redis.del(otpKey);
+    await redis.del(attemptKey);
 
-    res.status(200).json({ 
-      success: true, 
-      message: "Password updated successfully." 
+    return res.json({
+      success: true,
+      message: "Password reset successfully"
     });
-
   } catch (error) {
-    console.error("Reset Password Error:", error);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
+    console.log("❌ RESET PASSWORD ERROR:", error);
+
+    return next({
+      statusCode: 500,
+      message: "Reset password failed"
+    });
   }
 };
 

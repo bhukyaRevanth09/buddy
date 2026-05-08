@@ -7,9 +7,11 @@ import { AuthProvider } from "./src/context/AuthContext.js";
 import { SocketProvider } from "./src/context/socketContext.js";
 import { LocationProvider } from "./src/context/LocationContext.js";
 import { BookingProvider } from "./src/context/BookkingContext.js";
+import ErrorBoundary from "./src/components/ErrorBoundary.js";
 
 const App = () => {
   return (
+    <ErrorBoundary> 
     <LocationProvider>
       <AuthProvider>
         <SocketProvider>
@@ -21,6 +23,7 @@ const App = () => {
         </SocketProvider>
       </AuthProvider>
     </LocationProvider>
+    </ErrorBoundary>
   );
 };
 

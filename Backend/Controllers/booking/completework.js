@@ -8,16 +8,16 @@ import { sendEmail } from "../../services/emailServices.js";
 
 export const completeWork = async (req, res) => {
   try {
-    console.log("\n====================================");
-    console.log("🏁 COMPLETE WORK");
-    console.log("====================================");
+
+    console.log(" COMPLETE WORK");
+  
 
     const { bookingId, otp } = req.body;
     const buddyId = req.userId;
 
-    console.log("📦 BOOKING ID:", bookingId);
-    console.log("🧑 BUDDY:", buddyId);
-    console.log("🔐 OTP RECEIVED:", otp);
+    console.log(" BOOKING ID:", bookingId);
+    console.log(" BUDDY:", buddyId);
+    console.log(" OTP RECEIVED:", otp);
 
     if (!bookingId) {
       return res.status(400).json({
@@ -52,11 +52,7 @@ export const completeWork = async (req, res) => {
     const otpKey = `booking:complete_otp:${bookingId}`;
     const attemptsKey = `booking:complete_otp_attempts:${bookingId}`;
 
-    /*
-    ========================
-    STEP 1: GENERATE OTP
-    ========================
-    */
+    
     if (!otp) {
       if (!booking.user?.email) {
         return res.status(400).json({
@@ -70,8 +66,8 @@ export const completeWork = async (req, res) => {
       await redis.set(otpKey, completeOtp, "EX", 300);
       await redis.set(attemptsKey, 0, "EX", 300);
 
-      console.log("🔐 COMPLETE OTP GENERATED:", completeOtp);
-      console.log("📧 SENDING OTP TO:", booking.user.email);
+      console.log(" COMPLETE OTP GENERATED:", completeOtp);
+      console.log(" SENDING OTP TO:", booking.user.email);
 
       await sendEmail({
         email: booking.user.email,
@@ -94,11 +90,6 @@ export const completeWork = async (req, res) => {
       });
     }
 
-    /*
-    ========================
-    STEP 2: VERIFY OTP
-    ========================
-    */
     const savedOtp = await redis.get(otpKey);
 
     if (!savedOtp) {
@@ -130,11 +121,7 @@ export const completeWork = async (req, res) => {
       });
     }
 
-    /*
-    ========================
-    STEP 3: COMPLETE BOOKING
-    ========================
-    */
+ 
     booking.status = "completed";
     booking.completedAt = new Date();
 
@@ -176,7 +163,7 @@ export const completeWork = async (req, res) => {
       bookingId,
     });
 
-    console.log("✅ WORK COMPLETED SUCCESSFULLY");
+    console.log(" WORK COMPLETED SUCCESSFULLY");
 
     return res.status(200).json({
       success: true,
@@ -185,7 +172,7 @@ export const completeWork = async (req, res) => {
     });
 
   } catch (error) {
-    console.log("❌ COMPLETE ERROR:", error);
+    console.log(" COMPLETE ERROR:", error);
 
     return res.status(500).json({
       success: false,

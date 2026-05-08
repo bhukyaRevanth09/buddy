@@ -6,71 +6,92 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [authState, setAuthState] = useState({
     token: null,
+    refreshToken: null,
     isLoggedIn: false,
     role: null,
     user: null,
-    loading: true,
+    loading: true
   });
 
-  // LOAD SESSION
   useEffect(() => {
     const loadStorageData = async () => {
       try {
         const token = await SecureStore.getItemAsync("accessToken");
+        const refreshToken = await SecureStore.getItemAsync("refreshToken");
         const role = await SecureStore.getItemAsync("role");
-        const user = await SecureStore.getItemAsync("user");
+        const userString = await SecureStore.getItemAsync("user");
 
-        if (token && role) {
+        if (token && role && userString) {
           setAuthState({
             token,
+            refreshToken,
             role,
-            user: JSON.parse(user),
+            user: JSON.parse(userString),
             isLoggedIn: true,
-            loading: false,
+            loading: false
           });
         } else {
-          setAuthState((prev) => ({ ...prev, loading: false }));
+          setAuthState({
+            token: null,
+            refreshToken: null,
+            role: null,
+            user: null,
+            isLoggedIn: false,
+            loading: false
+          });
         }
       } catch (e) {
-        setAuthState((prev) => ({ ...prev, loading: false }));
+        console.log("LOAD AUTH ERROR:", e);
+
+        setAuthState({
+          token: null,
+          refreshToken: null,
+          role: null,
+          user: null,
+          isLoggedIn: false,
+          loading: false
+        });
       }
     };
 
     loadStorageData();
   }, []);
 
-  // LOGIN
   const login = async (userRole, resData) => {
     try {
-      const accessToken = resData.accessToken;
-      const refreshToken = resData.refreshToken;
+      const accessToken = resData?.accessToken;
+      const refreshToken = resData?.refreshToken;
 
       const profile =
-        resData.user ||
-        resData.buddy ||
-        resData.data?.user ||
-        resData.data?.buddy;
+        resData?.user ||
+        resData?.buddy ||
+        resData?.data?.user ||
+        resData?.data?.buddy ||
+        null;
 
-      // SAVE
+      if (!accessToken || !userRole) {
+        console.log("LOGIN DATA MISSING:", resData);
+        return;
+      }
+
       await SecureStore.setItemAsync("accessToken", accessToken);
-      await SecureStore.setItemAsync("refreshToken", refreshToken);
+      await SecureStore.setItemAsync("refreshToken", refreshToken || "");
       await SecureStore.setItemAsync("role", userRole);
-      await SecureStore.setItemAsync("user", JSON.stringify(profile));
+      await SecureStore.setItemAsync("user", JSON.stringify(profile || {}));
 
       setAuthState({
         token: accessToken,
+        refreshToken,
         role: userRole,
         user: profile,
         isLoggedIn: true,
-        loading: false,
+        loading: false
       });
-
     } catch (e) {
-      console.error("LOGIN ERROR:", e);
+      console.log("LOGIN ERROR:", e);
     }
   };
 
-  // LOGOUT
   const logout = async () => {
     await SecureStore.deleteItemAsync("accessToken");
     await SecureStore.deleteItemAsync("refreshToken");
@@ -79,10 +100,11 @@ export const AuthProvider = ({ children }) => {
 
     setAuthState({
       token: null,
+      refreshToken: null,
       isLoggedIn: false,
       role: null,
       user: null,
-      loading: false,
+      loading: false
     });
   };
 

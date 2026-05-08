@@ -1,236 +1,268 @@
 import mongoose from "mongoose";
+
 import redis from "../../Config/redis.js";
+
 import buddyModel from "../../models/BuddySchema.js";
+
 import { getIO } from "../../socket/socket.js";
+
 import { SOCKET_EVENTS } from "../../constants/backendSocketEvents.js";
+
 import { dispatchBookingToBuddy } from "../../services/Booking/bookingDispatchService.js";
 
 export const requestBooking = async (req, res) => {
-  try {
-    console.log("\n====================================");
-    console.log("📍 NEW BOOKING REQUEST");
-    console.log("====================================");
 
+  try {
+
+ 
     const {
       category,
       skills = [],
       interests = [],
       lat,
       lng,
+      price,
       fullAddress,
       houseNo,
       road,
-      landmark,
+      landmark
     } = req.body;
 
-    const userId = req.userId;
-    const userName = req.userName || "Customer";
+    console.log(" USER:", req.userId);
 
-    console.log("👤 USER:", userId);
+    console.log(" BODY:", req.body);
 
-    /*
-    ====================================
-    VALIDATION
-    ====================================
-    */
+ 
 
     if (!category) {
+
+      console.log("CATEGORY MISSING");
+
       return res.status(400).json({
         success: false,
-        message: "Category required",
+        message: "Category required"
       });
     }
 
     const latitude = parseFloat(lat);
+
     const longitude = parseFloat(lng);
 
-    if (isNaN(latitude) || isNaN(longitude)) {
+    if (
+      isNaN(latitude) ||
+      isNaN(longitude)
+    ) {
+
+      console.log(" INVALID LOCATION");
+
       return res.status(400).json({
         success: false,
-        message: "Invalid location",
+        message: "Invalid location"
       });
     }
 
     const io = getIO();
 
-    /*
-    ====================================
-    BLOCK MULTIPLE BOOKINGS
-    ====================================
-    */
+ 
 
     const existingBooking = await redis.get(
-      `user:active_booking:${userId}`
+      `user:active_booking:${req.userId}`
     );
 
     if (existingBooking) {
+
+      console.log(
+        " USER ALREADY HAS ACTIVE BOOKING"
+      );
+
       return res.status(400).json({
         success: false,
-        message: "Complete existing booking first",
+        message:
+          "Complete existing booking first"
       });
     }
 
-    /*
-    ====================================
-    CONVERT IDS
-    ====================================
-    */
+  
 
-    const categoryId = new mongoose.Types.ObjectId(category);
+    const categoryId =
+      new mongoose.Types.ObjectId(category);
+
     const skillIds = skills.map(
-      (id) => new mongoose.Types.ObjectId(id)
+      (id) =>
+        new mongoose.Types.ObjectId(id)
     );
 
-    /*
-    ====================================
-    PIPELINE BUILDER
-    ====================================
-    */
+    console.log(" SKILL IDS:", skillIds);
 
-    const buildPipeline = (useSkills = true) => [
+
+    console.log(" SEARCHING NEARBY BUDDIES...");
+
+    const buddies = await buddyModel.aggregate([
+
       {
         $geoNear: {
+
           near: {
             type: "Point",
-            coordinates: [longitude, latitude],
+            coordinates: [
+              longitude,
+              latitude
+            ]
           },
+
           distanceField: "distance",
-          maxDistance: 10000,
+
+          maxDistance: 20000,
+
           spherical: true,
+
           key: "geoLocation",
+
           query: {
-            availabilityStatus: "available",
+
+            availabilityStatus:
+              "available",
+
             accountStatus: "active",
+
             isOnline: true,
-            category: categoryId,
-            currentBooking: null,
-          },
-        },
+
+            category: categoryId
+          }
+        }
       },
 
-      ...(useSkills && skillIds.length
+      ...(skillIds.length
         ? [
             {
-              $addFields: {
-                matchedSkills: {
-                  $size: {
-                    $setIntersection: ["$skills", skillIds],
-                  },
-                },
-              },
-            },
-            {
-              $sort: {
-                matchedSkills: -1,
-                distance: 1,
-              },
-            },
+              $match: {
+                skills: {
+                  $in: skillIds
+                }
+              }
+            }
           ]
-        : [
-            {
-              $sort: { distance: 1 },
-            },
-          ]),
+        : []),
 
       {
         $project: {
           name: 1,
+          category: 1,
+          skills: 1,
           distance: 1,
-          matchedSkills: 1,
-        },
+          isOnline: 1,
+          availabilityStatus: 1
+        }
       },
 
-      { $limit: 5 },
-    ];
+      {
+        $limit: 5
+      }
 
-    /*
-    ====================================
-    FIND BUDDIES
-    ====================================
-    */
+    ]);
 
-    console.log("🔍 Searching buddies with skills...");
-
-    let buddies = await buddyModel.aggregate(
-      buildPipeline(true)
+    console.log(
+      " FOUND BUDDIES:",
+      buddies.length
     );
 
-    if (!buddies.length) {
-      console.log("⚠️ No skill match → retry without skills");
+    console.log(
+      JSON.stringify(buddies, null, 2)
+    );
 
-      buddies = await buddyModel.aggregate(
-        buildPipeline(false)
-      );
-    }
-
-    console.log("✅ FOUND:", buddies.length);
-
-    /*
-    ====================================
-    NO BUDDIES
-    ====================================
-    */
+ 
 
     if (!buddies.length) {
-      io.to(userId.toString()).emit(
+
+      console.log(" NO BUDDIES FOUND");
+
+      io.to(
+        req.userId.toString()
+      ).emit(
         SOCKET_EVENTS.BOOKING_FAILED,
         {
-          message: "No buddies nearby",
+          message:
+            "No buddies nearby"
         }
       );
 
       return res.json({
         success: false,
-        message: "No buddies nearby",
+        message:
+          "No buddies nearby"
       });
     }
 
-    /*
-    ====================================
-    CREATE BOOKING STATE
-    ====================================
-    */
+   
+    const bookingId =
+      `temp_${Date.now()}`;
 
-    const bookingId = `temp_${Date.now()}`;
+ 
 
     const state = {
+
       bookingId,
-      user: userId,
-      customerName: userName,
+
+      user: req.userId,
+
+      customerName:
+        req.userName || "Customer",
 
       category,
+
       skills,
+
       interests,
 
+      pricing: {
+        totalAmount: price || 0
+      },
+
       location: {
+
         type: "Point",
-        coordinates: [longitude, latitude],
+
+        coordinates: [
+          longitude,
+          latitude
+        ]
       },
 
       address: {
+
         fullAddress,
+
         houseNo,
+
         road,
-        landmark,
+
+        landmark
       },
 
       status: "searching",
+
       currentIndex: 0,
+
       assignedBuddy: null,
 
-      buddies: buddies.map((b) => ({
-        id: b._id.toString(),
-        distance: b.distance,
-      })),
+      buddies: buddies.map(
+        (buddy) => ({
 
-      createdAt: new Date().toISOString(),
+          id: buddy._id.toString(),
+
+          distance: buddy.distance
+        })
+      ),
+
+      createdAt:
+        new Date().toISOString()
     };
 
-    /*
-    ====================================
-    SAVE REDIS
-    ====================================
-    */
+    console.log(
+      "PENDING STATE CREATED"
+    );
+
+ 
 
     await redis.set(
       `booking:pending:${bookingId}`,
@@ -239,62 +271,86 @@ export const requestBooking = async (req, res) => {
       600
     );
 
+    console.log(
+      " SAVED TO REDIS:",
+      bookingId
+    );
+
+
+
     await redis.set(
-      `user:active_booking:${userId}`,
+      `user:active_booking:${req.userId}`,
       bookingId,
       "EX",
       600
     );
 
-    /*
-    ====================================
-    SOCKET EVENTS
-    ====================================
-    */
-
-    // 🔵 tell user search started
-    io.to(userId.toString()).emit(
-      SOCKET_EVENTS.BOOKING_SEARCHING,
+   
+    io.to(
+      req.userId.toString()
+    ).emit(
+      SOCKET_EVENTS.BOOKING_NEW,
       {
         bookingId,
-        status: "searching",
+        status: "searching"
       }
     );
 
-    console.log("📡 SEARCHING EVENT SENT");
+    console.log(
+      " SEARCHING EVENT EMITTED"
+    );
 
-    /*
-    ====================================
-    DISPATCH FIRST BUDDY
-    ====================================
-    */
-
-    console.log("🚀 Dispatching first buddy...");
+  
+    console.log(
+      " DISPATCHING TO FIRST BUDDY..."
+    );
 
     await dispatchBookingToBuddy({
       bookingId,
-      state,
+      state
     });
 
-    console.log("✅ DISPATCH DONE");
+    console.log(
+      "BOOKING DISPATCHED"
+    );
 
-    /*
-    ====================================
-    RESPONSE
-    ====================================
-    */
+ 
 
     return res.json({
+
       success: true,
-      message: "Searching for nearby buddies",
-      bookingId,
+
+      message:
+        "Searching for nearby buddies",
+
+      bookingId
     });
+
   } catch (err) {
-    console.log("❌ ERROR:", err);
+
+
+
+    console.log(
+      " REQUEST BOOKING ERROR"
+    );
+
+    console.log(err);
+
+    console.log(
+      err?.message
+    );
+
+    console.log(
+      err?.stack
+    );
+
 
     return res.status(500).json({
+
       success: false,
-      message: "Internal server error",
+
+      message:
+        "Internal server error"
     });
   }
 };

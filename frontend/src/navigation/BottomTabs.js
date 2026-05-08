@@ -7,7 +7,6 @@ import HomeScreen from "../screens/user/HomeScreen.js";
 import BookingScreen from "../screens/user/BookingScreen.js";
 import ProfileScreen from "../screens/user/UserProfile.js";
 
-
 const Tab = createBottomTabNavigator();
 
 export default function BottomTabs() {
@@ -28,17 +27,21 @@ export default function BottomTabs() {
           backgroundColor: "#fff",
           borderRadius: 20,
           height: 65,
-          paddingBottom: 8,
+          paddingBottom: 8
         },
 
-        tabBarIcon: ({ color, size, focused }) => {
-          let iconName;
+        tabBarIcon: ({ color, focused }) => {
+          let iconName = "ellipse-outline";
 
           if (route.name === "Home") {
             iconName = focused ? "home" : "home-outline";
-          } else if (route.name === "Bookings") {
+          }
+
+          if (route.name === "Booking") {
             iconName = focused ? "calendar" : "calendar-outline";
-          } else if (route.name === "Profile") {
+          }
+
+          if (route.name === "Profile") {
             iconName = focused ? "person" : "person-outline";
           }
 
@@ -46,13 +49,13 @@ export default function BottomTabs() {
             <View
               style={{
                 alignItems: "center",
-                justifyContent: "center",
+                justifyContent: "center"
               }}
             >
               <Ionicons name={iconName} size={24} color={color} />
             </View>
           );
-        },
+        }
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />

@@ -3,82 +3,113 @@ import userModel from "../models/UserSchema.js";
 import buddyModel from "../models/BuddySchema.js";
 
 export const verifyOtp = async (req, res, next) => {
-  console.log(req?.body)
   try {
-    const { email, otp, role, type } = req.body;
+    let { email, otp, role, type } = req.body;
 
     if (!email || !otp || !role || !type) {
       return res.status(400).json({
         success: false,
-        message: "Email, OTP, role and type required",
+        message: "Email, OTP, role and type required"
       });
     }
 
-    const key = `otp:${email}`;
+    email = email.trim().toLowerCase();
+    role = role.trim().toLowerCase();
+    type = type.trim().toLowerCase();
 
-    // get otp from redis
-    const storedOtp = await redis.get(key);
+    if (!["user", "buddy"].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid role"
+      });
+    }
+
+    if (!["register", "login", "forgot"].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP type"
+      });
+    }
+
+    const Model = role === "buddy" ? buddyModel : userModel;
+
+    const account = await Model.findOne({ email }).select("_id email");
+
+    if (type === "register" && account) {
+      return res.status(409).json({
+        success: false,
+        message:
+          role === "buddy"
+            ? "Buddy already exists"
+            : "User already exists"
+      });
+    }
+
+    if ((type === "login" || type === "forgot") && !account) {
+      return res.status(404).json({
+        success: false,
+        message:
+          role === "buddy"
+            ? "Buddy not found"
+            : "User not found"
+      });
+    }
+
+    const otpKey = `otp:${role}:${type}:${email}`;
+    const attemptKey = `otp_attempt:${role}:${type}:${email}`;
+
+    const storedOtp = await redis.get(otpKey);
 
     if (!storedOtp) {
       return res.status(400).json({
         success: false,
-        message: "OTP expired",
+        message: "OTP expired. Please request a new OTP"
       });
     }
 
-    // compare otp
-    if (String(storedOtp) !== String(otp)) {
+    let attempts = await redis.get(attemptKey);
+    attempts = attempts ? Number(attempts) : 0;
+
+    if (attempts >= 5) {
+      await redis.del(otpKey);
+      await redis.del(attemptKey);
+
+      return res.status(429).json({
+        success: false,
+        message: "Too many wrong attempts. Please request new OTP"
+      });
+    }
+
+    if (String(storedOtp) !== String(otp).trim()) {
+      await redis.incr(attemptKey);
+      await redis.expire(attemptKey, 300);
+
       return res.status(400).json({
         success: false,
-        message: "Invalid OTP",
+        message: "Invalid OTP"
       });
     }
 
-    // delete otp after success
-    await redis.del(key);
+    if (type !== "forgot") {
+      await redis.del(otpKey);
+      await redis.del(attemptKey);
+    }
 
-    // choose model
-    const Model = role === "buddy" ? buddyModel : userModel;
-
-    // REGISTER
-    if (type === "register") {
-      const existing = await Model.findOne({ email });
-
-      if (existing) {
-        return res.status(409).json({
-          success: false,
-          message: `${role} already exists`,
-        });
+    return res.status(200).json({
+      success: true,
+      message: "OTP verified",
+      data: {
+        email,
+        role,
+        type
       }
-
-      return res.status(200).json({
-        success: true,
-        message: "OTP verified",
-      });
-    }
-
-    // LOGIN / FORGOT
-    if (type === "login" || type === "forgot") {
-      const user = await Model.findOne({ email });
-
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: `${role} not found`,
-        });
-      }
-
-      return res.status(200).json({
-        success: true,
-        message: "OTP verified",
-      });
-    }
-
+    });
   } catch (error) {
-    console.log(error);
-    next({
+    console.log("❌ OTP VERIFY ERROR:", error);
+
+    return next({
       statusCode: 500,
-      message: "OTP verification failed",
+      message: "OTP verification failed"
     });
   }
 };

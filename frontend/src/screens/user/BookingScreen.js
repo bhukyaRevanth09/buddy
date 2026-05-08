@@ -1,4 +1,10 @@
-import React, { useEffect, useState, useContext, useCallback } from "react";
+import React, {
+  useEffect,
+  useState,
+  useContext,
+  useCallback
+} from "react";
+
 import {
   View,
   Text,
@@ -25,49 +31,92 @@ export default function BookingScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const getBookingId = (booking) =>
-    booking?._id || booking?.bookingId || booking?.id;
+  const getBookingId = (booking) => {
+    return booking?._id || booking?.bookingId || booking?.id;
+  };
 
-  const getUserLocation = (booking) =>
-    booking?.pickupLocation ||
-    booking?.location ||
-    booking?.userLocation ||
-    booking?.address?.location ||
-    null;
+  const getUserLocation = (booking) => {
+    const loc =
+      booking?.pickupLocation ||
+      booking?.userLocation ||
+      booking?.location ||
+      booking?.address?.location ||
+      null;
+
+    if (!loc) return null;
+
+    if (loc.latitude && loc.longitude) {
+      return {
+        latitude: Number(loc.latitude),
+        longitude: Number(loc.longitude)
+      };
+    }
+
+    if (loc.lat && loc.lng) {
+      return {
+        latitude: Number(loc.lat),
+        longitude: Number(loc.lng)
+      };
+    }
+
+    if (loc.coordinates && loc.coordinates.length >= 2) {
+      return {
+        latitude: Number(loc.coordinates[1]),
+        longitude: Number(loc.coordinates[0])
+      };
+    }
+
+    return null;
+  };
 
   const fetchBookings = async () => {
     try {
+      console.log(" FETCHING BOOKINGS...");
+
       const [activeRes, historyRes] = await Promise.all([
         api.get("/booking/active"),
         api.get("/booking/history")
       ]);
 
-      console.log("📦 ACTIVE BOOKING:", activeRes.data);
-      console.log("📚 BOOKING HISTORY:", historyRes.data);
+      console.log(" ACTIVE RESPONSE DATA:", activeRes?.data);
+      console.log(" HISTORY RESPONSE DATA:", historyRes?.data);
 
       if (activeRes?.data?.success && activeRes?.data?.data) {
         const active = activeRes.data.data;
+
+        console.log("✅ ACTIVE BOOKING FOUND:", active);
+
         setCurrentBooking(active);
 
         socket?.emit("booking:join", {
           bookingId: getBookingId(active)
         });
       } else {
+        console.log(" NO ACTIVE BOOKING FOUND");
         setCurrentBooking(null);
       }
 
       if (historyRes?.data?.success) {
+        console.log(" HISTORY BOOKINGS SET:", historyRes.data.data);
         setFinishedBookings(historyRes.data.data || []);
       } else {
+        console.log(" HISTORY RESPONSE FAILED");
         setFinishedBookings([]);
       }
     } catch (err) {
-      console.log("❌ Booking fetch error:", err?.response?.data || err.message);
+      console.log(" FETCH ERROR:", err?.response?.data || err.message);
+
       setCurrentBooking(null);
       setFinishedBookings([]);
+
+      Alert.alert(
+        "Error",
+        err?.response?.data?.message || "Failed to load bookings"
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
+      console.log(" FETCH COMPLETED");
     }
   };
 
@@ -84,22 +133,43 @@ export default function BookingScreen({ navigation }) {
     if (!socket) return;
 
     const refresh = (data) => {
-      console.log("🔄 Booking refresh event:", data);
+      console.log(" Booking refresh event:", data);
       fetchBookings();
     };
 
-    socket.on("work:completed", refresh);
+    const handleWorkCompleted = (data) => {
+      console.log("WORK COMPLETED IN BOOKING SCREEN:", data);
+
+      if (data?.bookingId) {
+        navigation.navigate("UserReview", {
+          bookingId: data.bookingId,
+          buddy: data.buddy || {
+            _id: data.buddyId,
+            name: "Buddy"
+          }
+        });
+        return;
+      }
+
+      fetchBookings();
+    };
+
+    socket.on("work:completed", handleWorkCompleted);
     socket.on("booking:cancelled", refresh);
     socket.on("booking:accepted", refresh);
     socket.on("booking:status_update", refresh);
+    socket.on("buddy:arrived", refresh);
+    socket.on("work:started", refresh);
 
     return () => {
-      socket.off("work:completed", refresh);
+      socket.off("work:completed", handleWorkCompleted);
       socket.off("booking:cancelled", refresh);
       socket.off("booking:accepted", refresh);
       socket.off("booking:status_update", refresh);
+      socket.off("buddy:arrived", refresh);
+      socket.off("work:started", refresh);
     };
-  }, [socket]);
+  }, [socket, navigation]);
 
   const openCurrentBooking = () => {
     if (!currentBooking) return;
@@ -121,17 +191,14 @@ export default function BookingScreen({ navigation }) {
     });
   };
 
-  const openFinishedBooking = (booking) => {
-    navigation.navigate("BookingDetails", {
-      booking
-    });
-  };
-
   const cancelBooking = async () => {
     if (!currentBooking) return;
 
     Alert.alert("Cancel Booking", "Are you sure you want to cancel?", [
-      { text: "No" },
+      {
+        text: "No",
+        style: "cancel"
+      },
       {
         text: "Yes, Cancel",
         style: "destructive",
@@ -144,7 +211,11 @@ export default function BookingScreen({ navigation }) {
             Alert.alert("Cancelled", "Booking cancelled successfully");
             fetchBookings();
           } catch (err) {
-            console.log("❌ Cancel failed:", err?.response?.data || err.message);
+            console.log(
+              " Cancel failed:",
+              err?.response?.data || err.message
+            );
+
             Alert.alert(
               "Cancel failed",
               err?.response?.data?.message || "Could not cancel booking"
@@ -166,10 +237,8 @@ export default function BookingScreen({ navigation }) {
           styles.card,
           isCurrent ? styles.currentCard : styles.finishedCard
         ]}
-        activeOpacity={0.8}
-        onPress={() =>
-          isCurrent ? openCurrentBooking() : openFinishedBooking(booking)
-        }
+        activeOpacity={0.85}
+        onPress={isCurrent ? openCurrentBooking : undefined}
       >
         <Image
           source={{
@@ -183,7 +252,7 @@ export default function BookingScreen({ navigation }) {
 
         <View style={styles.cardContent}>
           <Text style={styles.name}>
-            {booking?.buddy?.name || "Buddy"}
+            {booking?.buddy?.name || "Buddy not assigned"}
           </Text>
 
           <Text style={styles.info}>
@@ -196,16 +265,16 @@ export default function BookingScreen({ navigation }) {
               { color: isCurrent ? "#34C759" : "#777" }
             ]}
           >
-            {isCurrent ? `Current • ${booking?.status || "active"}` : booking?.status || "completed"}
+            {isCurrent
+              ? `Current • ${booking?.status || "active"}`
+              : booking?.status || "completed"}
           </Text>
 
-          <Text style={styles.small}>
-            Booking: {bookingId}
-          </Text>
+          <Text style={styles.small}>Booking: {bookingId}</Text>
         </View>
 
         <Ionicons
-          name={isCurrent ? "navigate-circle" : "information-circle-outline"}
+          name={isCurrent ? "navigate-circle" : "checkmark-circle-outline"}
           size={28}
           color={isCurrent ? "#007AFF" : "#555"}
         />
@@ -226,13 +295,14 @@ export default function BookingScreen({ navigation }) {
     <SafeAreaView style={styles.container}>
       <ScrollView
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
         <Text style={styles.title}>My Bookings</Text>
 
-        {currentBooking && (
+        {currentBooking ? (
           <>
             <Text style={styles.sectionTitle}>Current Booking</Text>
 
@@ -246,13 +316,15 @@ export default function BookingScreen({ navigation }) {
               <Text style={styles.trackText}>Go to Tracking</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={cancelBooking}
-            >
+            <TouchableOpacity style={styles.cancelBtn} onPress={cancelBooking}>
               <Text style={styles.cancelText}>Cancel Booking</Text>
             </TouchableOpacity>
           </>
+        ) : (
+          <View style={styles.emptyBox}>
+            <Ionicons name="time-outline" size={60} color="#ccc" />
+            <Text style={styles.empty}>No running booking</Text>
+          </View>
         )}
 
         <Text style={styles.sectionTitle}>Finished Bookings</Text>
@@ -267,13 +339,6 @@ export default function BookingScreen({ navigation }) {
             <Text style={styles.empty}>No finished bookings</Text>
           </View>
         )}
-
-        {!currentBooking && finishedBookings.length === 0 && (
-          <View style={styles.emptyBox}>
-            <Ionicons name="calendar-outline" size={70} color="#ccc" />
-            <Text style={styles.empty}>No bookings found</Text>
-          </View>
-        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -283,7 +348,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#fff",
-    padding: 20
+    paddingHorizontal: 20
+  },
+
+  scrollContent: {
+    paddingBottom: 110
   },
 
   center: {
@@ -300,6 +369,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: "800",
+    marginTop: 10,
     marginBottom: 20
   },
 
@@ -332,7 +402,8 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 12,
-    marginRight: 15
+    marginRight: 15,
+    backgroundColor: "#ddd"
   },
 
   cardContent: {
@@ -351,7 +422,8 @@ const styles = StyleSheet.create({
 
   status: {
     marginTop: 4,
-    fontWeight: "700"
+    fontWeight: "700",
+    textTransform: "capitalize"
   },
 
   small: {
@@ -397,6 +469,7 @@ const styles = StyleSheet.create({
 
   empty: {
     marginTop: 10,
-    color: "#777"
+    color: "#777",
+    fontWeight: "600"
   }
 });

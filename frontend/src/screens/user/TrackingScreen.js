@@ -1,5 +1,3 @@
-// screens/tracking/TrackingScreen.jsx
-
 import React, { useEffect, useRef, useState, useContext } from "react";
 import {
   View,
@@ -33,6 +31,7 @@ export default function TrackingScreen({ route, navigation }) {
 
   const mapRef = useRef(null);
   const hasArrivedRef = useRef(false);
+  const hasCompletedRef = useRef(false);
 
   const {
     buddyLocation,
@@ -55,38 +54,36 @@ export default function TrackingScreen({ route, navigation }) {
     })
   ).current;
 
+  const goToReview = () => {
+    if (hasCompletedRef.current) return;
+
+    hasCompletedRef.current = true;
+
+    Alert.alert("Completed", "Work completed");
+
+    navigation.replace("UserReview", {
+      bookingId,
+      buddy
+    });
+  };
+
   const showArrivedUI = () => {
     if (hasArrivedRef.current) return;
 
     hasArrivedRef.current = true;
-
-    console.log("✅ BUDDY ARRIVED UI ACTIVE");
-
     setArrived(true);
   };
 
-  /*
-  =========================
-  FALLBACK FROM HOOK STATE
-  =========================
-  */
   useEffect(() => {
-    console.log("🧪 TRACKING STATE:", {
-      trackingStatus,
-      workStarted,
-      workCompleted
-    });
-
     if (trackingStatus === "arrived" || workStarted) {
       showArrivedUI();
     }
-  }, [trackingStatus, workStarted]);
 
-  /*
-  =========================
-  MOVE BUDDY MARKER
-  =========================
-  */
+    if (trackingStatus === "completed" || workCompleted) {
+      goToReview();
+    }
+  }, [trackingStatus, workStarted, workCompleted]);
+
   useEffect(() => {
     if (!userLocation || !buddyLocation || arrived) return;
 
@@ -128,35 +125,19 @@ export default function TrackingScreen({ route, navigation }) {
     setEta(fallbackEta);
   }, [buddyLocation, arrived]);
 
-  /*
-  =========================
-  SOCKET LISTENERS
-  =========================
-  */
   useEffect(() => {
     if (!socket || !bookingId) return;
-
-    console.log("📥 Tracking joined booking:", bookingId);
 
     socket.emit(SOCKET_EVENTS.BOOKING_JOIN, {
       bookingId
     });
 
-    socket.onAny((event, data) => {
-      console.log("📡 ANY SOCKET EVENT IN TRACKING:", event, data);
-    });
-
     const onArrived = (data) => {
-      console.log("📥 BUDDY_ARRIVED EVENT:", data);
-
       if (data?.bookingId !== bookingId) return;
-
       showArrivedUI();
     };
 
     const onStatusUpdate = (data) => {
-      console.log("📡 TRACKING STATUS UPDATE:", data);
-
       if (data?.bookingId !== bookingId) return;
 
       if (data?.status === "arrived" || data?.status === "started") {
@@ -164,34 +145,18 @@ export default function TrackingScreen({ route, navigation }) {
       }
 
       if (data?.status === "completed") {
-        Alert.alert("Completed", "Work completed");
-
-        navigation.reset({
-          index: 0,
-          routes: [{ name: "MainTabs" }]
-        });
+        goToReview();
       }
     };
 
     const onWorkStarted = (data) => {
-      console.log("📥 WORK_STARTED EVENT:", data);
-
       if (data?.bookingId !== bookingId) return;
-
       showArrivedUI();
     };
 
     const onWorkCompleted = (data) => {
-      console.log("📥 WORK_COMPLETED EVENT:", data);
-
       if (data?.bookingId !== bookingId) return;
-
-      Alert.alert("Completed", "Work completed");
-
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "MainTabs" }]
-      });
+      goToReview();
     };
 
     socket.on(SOCKET_EVENTS.BUDDY_ARRIVED, onArrived);
@@ -204,14 +169,12 @@ export default function TrackingScreen({ route, navigation }) {
         bookingId
       });
 
-      socket.offAny();
-
       socket.off(SOCKET_EVENTS.BUDDY_ARRIVED, onArrived);
       socket.off(SOCKET_EVENTS.STATUS_UPDATE, onStatusUpdate);
       socket.off(SOCKET_EVENTS.WORK_STARTED, onWorkStarted);
       socket.off(SOCKET_EVENTS.WORK_COMPLETED, onWorkCompleted);
     };
-  }, [socket, bookingId]);
+  }, [socket, bookingId, buddy]);
 
   const safeDistance = Number.isFinite(Number(distance))
     ? Number(distance)
@@ -230,11 +193,6 @@ export default function TrackingScreen({ route, navigation }) {
     );
   }
 
-  /*
-  =========================
-  ARRIVED FULL SCREEN UI
-  =========================
-  */
   if (arrived) {
     return (
       <SafeAreaView style={styles.arrivedContainer}>
@@ -290,7 +248,11 @@ export default function TrackingScreen({ route, navigation }) {
 
         <TouchableOpacity
           style={styles.secondaryBtn}
-          onPress={() => navigation.navigate("Booking")}
+          onPress={() =>
+            navigation.navigate("MainTabs", {
+              screen: "Booking"
+            })
+          }
         >
           <Text style={styles.secondaryText}>View Booking</Text>
         </TouchableOpacity>
@@ -349,11 +311,6 @@ export default function TrackingScreen({ route, navigation }) {
             optimizeWaypoints
             resetOnChange={false}
             onReady={(result) => {
-              console.log("✅ GOOGLE ROAD ROUTE:", {
-                distance: result.distance,
-                duration: result.duration
-              });
-
               setDistance(result.distance);
               setEta(Math.ceil(result.duration));
 
@@ -368,7 +325,7 @@ export default function TrackingScreen({ route, navigation }) {
               });
             }}
             onError={(errorMessage) => {
-              console.log("❌ GOOGLE ROUTE ERROR:", errorMessage);
+              console.log("Google route error:", errorMessage);
             }}
           />
         )}

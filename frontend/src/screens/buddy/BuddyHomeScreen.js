@@ -34,9 +34,7 @@ export default function BuddyHome({ navigation }) {
   });
 
   /*
-  ======================
   SOCKET HOOK
-  ======================
   */
   useBuddySocket({
     socket,
@@ -45,16 +43,16 @@ export default function BuddyHome({ navigation }) {
   });
 
   /*
-  ======================
+  
   LOAD DASHBOARD
-  ======================
+
   */
   useEffect(() => {
     const loadDashboard = async () => {
       try {
         const res = await api.get("/buddy/dashboard");
 
-        console.log("📊 DASHBOARD RESPONSE:", res.data);
+        console.log(" DASHBOARD RESPONSE:", res.data);
 
         if (res.data.success) {
           setStats(res.data.data);
@@ -65,7 +63,7 @@ export default function BuddyHome({ navigation }) {
           }
         }
       } catch (err) {
-        console.log("❌ DASHBOARD ERROR:", err?.response?.data || err.message);
+        console.log(" DASHBOARD ERROR:", err?.response?.data || err.message);
       } finally {
         setLoading(false);
       }
@@ -74,17 +72,15 @@ export default function BuddyHome({ navigation }) {
     loadDashboard();
   }, []);
 
-  /*
-  ======================
-  TOGGLE STATUS
-  ======================
-  */
+
+  // TOGGLE STATUS
+ 
   const toggleStatus = async () => {
     try {
       const newStatus = !isOnline;
       setIsOnline(newStatus);
 
-      console.log("🔄 STATUS UPDATE:", newStatus);
+      console.log(" STATUS UPDATE:", newStatus);
 
       socket?.emit(SOCKET_EVENTS.STATUS_UPDATE, {
         isOnline: newStatus
@@ -94,24 +90,19 @@ export default function BuddyHome({ navigation }) {
         status: newStatus ? "available" : "offline"
       });
     } catch (err) {
-      console.log("❌ STATUS ERROR:", err?.response?.data || err.message);
+      console.log(" STATUS ERROR:", err?.response?.data || err.message);
       setIsOnline((prev) => !prev);
       Alert.alert("Error", "Failed to update status");
     }
   };
 
-  /*
-  ======================
-  ACCEPT BOOKING
-  ======================
-  */
 const handleAccept = async () => {
   if (!incomingRequest) return;
 
   try {
     const requestToAccept = incomingRequest;
 
-    // ✅ close popup immediately
+    //  close popup immediately
     setIncomingRequest(null);
 
     const res = await api.post("/booking/accept", {
@@ -140,20 +131,20 @@ const handleAccept = async () => {
       });
     }
   } catch (err) {
-    console.log("❌ ACCEPT ERROR:", err?.response?.data || err.message);
+    console.log(" ACCEPT ERROR:", err?.response?.data || err.message);
     setIncomingRequest(null);
     Alert.alert("Error", err?.response?.data?.message || "Accept failed");
   }
 };
-  /*
-  ======================
-  REJECT BOOKING
-  ======================
-  */
+  
+
+  // REJECT BOOKING
+
+  
   const handleReject = () => {
     if (!incomingRequest) return;
 
-    console.log("❌ REJECT BOOKING:", incomingRequest.bookingId);
+    console.log(" REJECT BOOKING:", incomingRequest.bookingId);
 
     socket?.emit(SOCKET_EVENTS.BOOKING_REJECTED, {
       bookingId: incomingRequest.bookingId
@@ -162,11 +153,9 @@ const handleAccept = async () => {
     setIncomingRequest(null);
   };
 
-  /*
-  ======================
-  LOGOUT
-  ======================
-  */
+
+  // LOGOUT
+
   const handleLogout = () => {
     Alert.alert("Logout", "Are you sure?", [
       { text: "Cancel" },

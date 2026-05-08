@@ -10,14 +10,14 @@ export const dispatchBookingToBuddy = async ({ bookingId, state }) => {
     const currentBuddy = state.buddies[state.currentIndex];
 
     if (!currentBuddy) {
-      console.log("❌ No buddy found at index:", state.currentIndex);
+      console.log(" No buddy found at index:", state.currentIndex);
       return false;
     }
 
     const locked = await lockBuddy(currentBuddy.id);
 
     if (!locked) {
-      console.log("🔒 Buddy already locked:", currentBuddy.id);
+      console.log(" Buddy already locked:", currentBuddy.id);
       return false;
     }
 
@@ -52,7 +52,7 @@ export const dispatchBookingToBuddy = async ({ bookingId, state }) => {
       pickupLocation,
     };
 
-    console.log("📤 DISPATCH PAYLOAD:", {
+    console.log(" DISPATCH PAYLOAD:", {
       bookingId,
       buddyId: currentBuddy.id,
       payload,
@@ -72,7 +72,7 @@ export const dispatchBookingToBuddy = async ({ bookingId, state }) => {
 
     return true;
   } catch (err) {
-    console.log("❌ DISPATCH ERROR:", err);
+    console.log("DISPATCH ERROR:", err);
     return false;
   }
 };

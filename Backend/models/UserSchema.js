@@ -42,7 +42,7 @@ const userSchema = new mongoose.Schema({
 
 userSchema.index({ geoLocation: "2dsphere" });
 
-// 🔹 THE FIX: Check if the model exists before creating it
+
 const userModel = mongoose.models.user || mongoose.model("user", userSchema);
 
 export default userModel;

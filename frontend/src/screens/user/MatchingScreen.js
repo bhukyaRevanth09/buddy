@@ -32,9 +32,9 @@ export default function MatchingScreen({ route, navigation }) {
   const timeoutRef = useRef(null);
 
   /*
-  ====================================
+  
   ANIMATION
-  ====================================
+  
   */
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const opacityAnim = useRef(new Animated.Value(0.6)).current;
@@ -75,29 +75,29 @@ export default function MatchingScreen({ route, navigation }) {
   }, []);
 
   /*
-  ====================================
+
   SOCKET FLOW
-  ====================================
+
   */
   useEffect(() => {
 
     if (!socket || !bookingId) return;
 
-    console.log("🎯 Matching started:", bookingId);
+    console.log(" Matching started:", bookingId);
 
     /*
-    ============================
+  
     JOIN ROOM
-    ============================
+   
     */
     socket.emit(SOCKET_EVENTS.BOOKING_JOIN, {
       bookingId
     });
 
     /*
-    ============================
+   
     TIMEOUT (FAIL SAFE)
-    ============================
+  
     */
     timeoutRef.current = setTimeout(() => {
       setIsError(true);
@@ -105,9 +105,9 @@ export default function MatchingScreen({ route, navigation }) {
     }, 25000);
 
     /*
-    ============================
+  
     EVENTS
-    ============================
+   
     */
 
     const onSearching = (data) => {
@@ -119,7 +119,7 @@ export default function MatchingScreen({ route, navigation }) {
     const onAccepted = async (data) => {
       if (data?.bookingId !== bookingId) return;
 
-      console.log("✅ ACCEPTED:", data);
+      console.log(" ACCEPTED:", data);
 
       clearTimeout(timeoutRef.current);
 
@@ -137,14 +137,14 @@ export default function MatchingScreen({ route, navigation }) {
     const onConfirmed = (data) => {
       if (data?.bookingId !== bookingId) return;
 
-      console.log("📦 CONFIRMED:", data);
+      console.log(" CONFIRMED:", data);
       setStatus("Buddy confirmed. Preparing...");
     };
 
     const onStatusUpdate = (data) => {
       if (data?.bookingId !== bookingId) return;
 
-      console.log("📡 STATUS UPDATE:", data.status);
+      console.log(" STATUS UPDATE:", data.status);
 
       if (data.status === "searching") {
         setStatus("Searching nearby buddies...");
@@ -174,9 +174,9 @@ export default function MatchingScreen({ route, navigation }) {
     };
 
     /*
-    ============================
+  
     SOCKET LISTENERS
-    ============================
+
     */
 
     socket.on(SOCKET_EVENTS.BOOKING_NEW, onSearching);
@@ -187,9 +187,9 @@ export default function MatchingScreen({ route, navigation }) {
     socket.on(SOCKET_EVENTS.BOOKING_CANCELLED, onCancelled);
 
     /*
-    ============================
+
     CLEANUP
-    ============================
+  
     */
     return () => {
 
@@ -210,9 +210,9 @@ export default function MatchingScreen({ route, navigation }) {
   }, [socket, bookingId, currentLocation]);
 
   /*
-  ====================================
+
   UI
-  ====================================
+ 
   */
   return (
     <SafeAreaView style={styles.container}>
@@ -262,11 +262,10 @@ export default function MatchingScreen({ route, navigation }) {
   );
 }
 
-/*
-====================================
-STYLES
-====================================
-*/
+
+
+// STYLES
+
 const styles = StyleSheet.create({
 
   container: {

@@ -12,11 +12,11 @@ const redis = new IORedis({
 });
 
 redis.on("connect", () => {
-  console.log("✅ Redis Connected");
+  console.log(" Redis Connected");
 });
 
 redis.on("error", (err) => {
-  console.log("❌ Redis Error:", err.message);
+  console.log(" Redis Error:", err.message);
 });
 
 export default redis;

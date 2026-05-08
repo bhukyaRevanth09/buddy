@@ -15,7 +15,7 @@ export const TokenSetter = (data) => {
     return jwt.sign(
       { id, role },
       process.env.JWT_KEY,
-      { expiresIn: "15m" }   // ✅ short lived
+      { expiresIn: "15m" }   //  short lived
     );
 
   } catch (error) {
@@ -36,7 +36,7 @@ export const refreshTokenSetter = (data) => {
     return jwt.sign(
       { id, role },
       process.env.REFRESH_KEY,
-      { expiresIn: "40d" }   // ✅ long lived
+      { expiresIn: "40d" }   //  long lived
     );
 
   } catch (error) {

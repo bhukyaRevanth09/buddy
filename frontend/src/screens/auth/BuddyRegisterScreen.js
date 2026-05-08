@@ -10,7 +10,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import * as Location from "expo-location";
 
-const BASE_URL = "http://192.168.0.109:9090/api";
+const BASE_URL = "http://10.112.58.157:9090/api";
 
 const GENDERS = ["Male", "Female", "Other"];
 
@@ -114,7 +114,7 @@ export default function BuddyRegisterScreen({ navigation }) {
     setSkills(res.data.data);
   };
 
-  // ✅ UPDATED (no max limit)
+  
   const toggleItem = (key, value) => {
     const current = form[key];
 
@@ -134,7 +134,7 @@ export default function BuddyRegisterScreen({ navigation }) {
     }
   };
 
-  // ✅ UPDATED VALIDATION
+  // UPDATED VALIDATION
   const validate = () => {
     if (!form.name) return "Name required";
     if (!form.email) return "Email required";

@@ -3,9 +3,9 @@ import mongoose from "mongoose";
 const buddySchema = new mongoose.Schema(
   {
     /*
-    =========================
+    
     BASIC INFO
-    =========================
+  
     */
     name: {
       type: String,
@@ -44,9 +44,9 @@ const buddySchema = new mongoose.Schema(
     },
 
     /*
-    =========================
+
     CATEGORY
-    =========================
+  
     */
     category: {
       type: mongoose.Schema.Types.ObjectId,
@@ -56,9 +56,9 @@ const buddySchema = new mongoose.Schema(
     },
 
     /*
-    =========================
+    
     SKILLS
-    =========================
+   
     */
     skills: [
       {
@@ -70,9 +70,9 @@ const buddySchema = new mongoose.Schema(
     ],
 
     /*
-    =========================
+  
     INTERESTS
-    =========================
+    
     */
     interests: [
       {
@@ -87,9 +87,9 @@ const buddySchema = new mongoose.Schema(
     },
 
     /*
-    =========================
+
     ADDRESS
-    =========================
+ 
     */
     address: {
       street: String,
@@ -99,9 +99,9 @@ const buddySchema = new mongoose.Schema(
     },
 
     /*
-    =========================
+ 
     GEO LOCATION (FOR SEARCH)
-    =========================
+
     */
     geoLocation: {
       type: {
@@ -116,9 +116,9 @@ const buddySchema = new mongoose.Schema(
     },
 
     /*
-    =========================
+  
     LIVE LOCATION (OPTIONAL)
-    =========================
+  
     */
     currentLocation: {
       latitude: Number,
@@ -127,9 +127,9 @@ const buddySchema = new mongoose.Schema(
     },
 
     /*
-    =========================
+
     STATUS
-    =========================
+
     */
     accountStatus: {
       type: String,
@@ -189,16 +189,15 @@ const buddySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-/*
-=========================
-INDEXES (IMPORTANT)
-=========================
-*/
 
-// 🔥 GEO INDEX (required for $geoNear)
+// INDEXES 
+
+
+
+//  GEO INDEX (required for $geoNear)
 buddySchema.index({ geoLocation: "2dsphere" });
 
-// 🔥 FAST FILTERING
+//  FAST FILTERING
 buddySchema.index({
   accountStatus: 1,
   availabilityStatus: 1,
@@ -206,7 +205,7 @@ buddySchema.index({
   category: 1,
 });
 
-// 🔥 OPTIONAL (tracking queries)
+//  OPTIONAL (tracking queries)
 buddySchema.index({
   "currentLocation.latitude": 1,
   "currentLocation.longitude": 1,

@@ -14,11 +14,11 @@ export default function BuddyNavigationMap({
   const [distance, setDistance] = useState(0);
   const [eta, setEta] = useState(0);
 
-  /*
-  =========================
-  GET ROUTE (GOOGLE API)
-  =========================
-  */
+  
+
+  // GET ROUTE (GOOGLE API)
+
+  
   const fetchRoute = async () => {
     if (!userLocation || !buddyLocation) return;
 
@@ -89,18 +89,18 @@ export default function BuddyNavigationMap({
   };
 
   /*
-  =========================
+
   LOAD ROUTE
-  =========================
+
   */
   useEffect(() => {
     fetchRoute();
   }, [userLocation, buddyLocation]);
 
   /*
-  =========================
+
   FIT MAP
-  =========================
+
   */
   useEffect(() => {
     if (!routeCoords.length) return;
@@ -180,11 +180,9 @@ export default function BuddyNavigationMap({
   );
 }
 
-/*
-=========================
-STYLES
-=========================
-*/
+
+// STYLES
+
 const styles = StyleSheet.create({
 
   panel: {

@@ -118,14 +118,14 @@ export const getNearestBuddies = async (req, res) => {
     const interestArray = interestIds ? interestIds.split(",") : [];
 
     /*
-    ===============================
+ 
     QUERY
-    ===============================
+
     */
     let query = {
       accountStatus: "active",
       isOnline: true,
-      availabilityStatus: "available", // ✅ IMPORTANT
+      availabilityStatus: "available", //  IMPORTANT
       geoLocation: {
         $near: {
           $geometry: {
@@ -151,20 +151,20 @@ export const getNearestBuddies = async (req, res) => {
     }
 
     /*
-    ===============================
+    
     FIND
-    ===============================
+
     */
     const buddies = await buddyModel
       .find(query)
       .select("-password")
       .lean();
 
-    /*
-    ===============================
-    MAP FOR FRONTEND
-    ===============================
-    */
+    
+   
+    // MAP FOR FRONTEND
+   
+    
     const mappedBuddies = buddies.map(buddy => ({
       ...buddy,
       location: buddy.geoLocation

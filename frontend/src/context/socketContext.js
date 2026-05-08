@@ -27,23 +27,22 @@ import { SOCKET_EVENTS } from "../../evenets/frontendsocketEvents";
 export const SocketContext =
   createContext();
 
-/*
-==========================================================
-CONFIG
-==========================================================
-*/
+
+
+// CONFIG
+
 
 const SOCKET_URL =
-  "http://192.168.0.109:9090";
+  "http://10.112.58.157:9090";
 
 const API_URL =
-  "http://192.168.0.109:9090/api";
+  "http://10.112.58.157:9090/api";
 
-/*
-==========================================================
-SOCKET PROVIDER
-==========================================================
-*/
+
+
+// SOCKET PROVIDER
+
+
 
 export const SocketProvider = ({
   children
@@ -67,11 +66,11 @@ export const SocketProvider = ({
   const [loading, setLoading] =
     useState(true);
 
-  /*
-  ==========================================================
-  GET ACCESS TOKEN
-  ==========================================================
-  */
+  
+
+  // GET ACCESS TOKEN
+
+  
 
   const getAccessToken =
     async () => {
@@ -86,7 +85,7 @@ export const SocketProvider = ({
         if (!token) {
 
           console.log(
-            "❌ ACCESS TOKEN NOT FOUND"
+            " ACCESS TOKEN NOT FOUND"
           );
 
           return null;
@@ -104,7 +103,7 @@ export const SocketProvider = ({
       } catch (err) {
 
         console.log(
-          "❌ GET ACCESS TOKEN ERROR"
+          "GET ACCESS TOKEN ERROR"
         );
 
         console.log(err);
@@ -113,11 +112,11 @@ export const SocketProvider = ({
       }
     };
 
-  /*
-  ==========================================================
-  GET REFRESH TOKEN
-  ==========================================================
-  */
+  
+
+  // GET REFRESH TOKEN
+ 
+  
 
   const getRefreshToken =
     async () => {
@@ -132,7 +131,7 @@ export const SocketProvider = ({
         if (!token) {
 
           console.log(
-            "❌ REFRESH TOKEN NOT FOUND"
+            " REFRESH TOKEN NOT FOUND"
           );
 
           return null;
@@ -143,7 +142,7 @@ export const SocketProvider = ({
       } catch (err) {
 
         console.log(
-          "❌ GET REFRESH TOKEN ERROR"
+          "GET REFRESH TOKEN ERROR"
         );
 
         console.log(err);
@@ -152,26 +151,24 @@ export const SocketProvider = ({
       }
     };
 
-  /*
-  ==========================================================
-  REFRESH ACCESS TOKEN
-  ==========================================================
-  */
+  
+  
+  // REFRESH ACCESS TOKEN
+  
+  
 
   const refreshAccessToken =
     async () => {
 
       try {
 
-        console.log("\n================================");
+
 
         console.log(
-          "🔄 REFRESHING ACCESS TOKEN"
+          " REFRESHING ACCESS TOKEN"
         );
 
-        console.log(
-          "================================"
-        );
+       
 
         const refreshToken =
           await getRefreshToken();
@@ -195,7 +192,7 @@ export const SocketProvider = ({
         if (!newAccessToken) {
 
           console.log(
-            "❌ NEW ACCESS TOKEN NOT RECEIVED"
+            " NEW ACCESS TOKEN NOT RECEIVED"
           );
 
           return null;
@@ -207,7 +204,7 @@ export const SocketProvider = ({
         );
 
         console.log(
-          "✅ ACCESS TOKEN REFRESHED"
+          "ACCESS TOKEN REFRESHED"
         );
 
         return newAccessToken;
@@ -215,7 +212,7 @@ export const SocketProvider = ({
       } catch (err) {
 
         console.log(
-          "❌ REFRESH TOKEN ERROR"
+          " REFRESH TOKEN ERROR"
         );
 
         console.log(
@@ -227,27 +224,23 @@ export const SocketProvider = ({
       }
     };
 
-  /*
-  ==========================================================
-  DISCONNECT SOCKET
-  ==========================================================
-  */
+  
+  // DISCONNECT SOCKET
+
+  
 
   const disconnectSocket =
     useCallback(() => {
 
       try {
 
-        console.log("\n================================");
+   
 
         console.log(
-          "🔌 SOCKET DISCONNECT"
+          " SOCKET DISCONNECT"
         );
 
-        console.log(
-          "================================"
-        );
-
+       
         if (socketRef.current) {
 
           socketRef.current.removeAllListeners();
@@ -264,7 +257,7 @@ export const SocketProvider = ({
       } catch (err) {
 
         console.log(
-          "❌ DISCONNECT ERROR"
+          " DISCONNECT ERROR"
         );
 
         console.log(err);
@@ -272,27 +265,24 @@ export const SocketProvider = ({
 
     }, []);
 
-  /*
-  ==========================================================
-  CREATE SOCKET
-  ==========================================================
-  */
+  
+
+  // CREATE SOCKET
+
+  
 
   const createSocket =
     async (token) => {
 
       try {
 
-        console.log("\n================================");
+
 
         console.log(
-          "🚀 CREATE SOCKET"
+          " CREATE SOCKET"
         );
 
-        console.log(
-          "================================"
-        );
-
+       
         const newSocket = io(
           SOCKET_URL,
           {
@@ -322,30 +312,26 @@ export const SocketProvider = ({
           }
         );
 
-        /*
-        ======================================================
-        CONNECT
-        ======================================================
-        */
+    
+        // CONNECT
+      
 
         newSocket.on(
           "connect",
           () => {
 
-            console.log("\n================================");
+          
 
             console.log(
-              "🟢 SOCKET CONNECTED"
+              " SOCKET CONNECTED"
             );
 
             console.log(
-              "🧩 SOCKET ID:",
+              " SOCKET ID:",
               newSocket.id
             );
 
-            console.log(
-              "================================"
-            );
+        
 
             setConnected(true);
 
@@ -353,72 +339,72 @@ export const SocketProvider = ({
           }
         );
 
-        /*
-        ======================================================
-        READY
-        ======================================================
-        */
+        
+        
+        // READY
+        
+        
 
         newSocket.on(
           SOCKET_EVENTS.CONNECTION_READY,
           (data) => {
 
             console.log(
-              "✅ CONNECTION READY"
+              " CONNECTION READY"
             );
 
             console.log(data);
           }
         );
 
-        /*
-        ======================================================
-        LOCATION UPDATE
-        ======================================================
-        */
+        
+    
+        // LOCATION UPDATE
+       
+        
 
         newSocket.on(
           SOCKET_EVENTS.LOCATION_UPDATE,
           (data) => {
 
             console.log(
-              "\n📍 LIVE LOCATION UPDATE"
+              "\n LIVE LOCATION UPDATE"
             );
 
             console.log(data);
           }
         );
 
-        /*
-        ======================================================
-        BOOKING ACCEPTED
-        ======================================================
-        */
+        
+        
+        // BOOKING ACCEPTED
+       
+        
 
         newSocket.on(
           SOCKET_EVENTS.BOOKING_ACCEPTED,
           (data) => {
 
             console.log(
-              "\n✅ BOOKING ACCEPTED"
+              "\n BOOKING ACCEPTED"
             );
 
             console.log(data);
           }
         );
 
-        /*
-        ======================================================
-        BUDDY ARRIVED
-        ======================================================
-        */
+        
+     
+        // BUDDY ARRIVED
+      
+        
 
         newSocket.on(
           SOCKET_EVENTS.BUDDY_ARRIVED,
           (data) => {
 
             console.log(
-              "\n🚶 BUDDY ARRIVED"
+              "\n BUDDY ARRIVED"
             );
 
             console.log(data);
@@ -426,9 +412,9 @@ export const SocketProvider = ({
         );
 
         /*
-        ======================================================
+        
         OTP
-        ======================================================
+       
         */
 
         newSocket.on(
@@ -436,7 +422,7 @@ export const SocketProvider = ({
           (data) => {
 
             console.log(
-              "\n🔐 OTP GENERATED"
+              "\n OTP GENERATED"
             );
 
             console.log(data);
@@ -444,37 +430,32 @@ export const SocketProvider = ({
         );
 
         /*
-        ======================================================
+        
         DISCONNECT
-        ======================================================
+        
         */
 
         newSocket.on(
           "disconnect",
           (reason) => {
 
-            console.log("\n================================");
+            
 
             console.log(
-              "🔴 SOCKET DISCONNECTED"
+              " SOCKET DISCONNECTED"
             );
 
             console.log(
-              "📄 REASON:",
+              " REASON:",
               reason
             );
 
-            console.log(
-              "================================"
-            );
-
+           
             setConnected(false);
 
-            /*
-            ============================================
-            TOKEN EXPIRED
-            ============================================
-            */
+         
+            // TOKEN EXPIRED
+            
 
             if (
               reason ===
@@ -482,42 +463,40 @@ export const SocketProvider = ({
             ) {
 
               console.log(
-                "⚠️ SERVER DISCONNECTED SOCKET"
+                " SERVER DISCONNECTED SOCKET"
               );
             }
           }
         );
 
         /*
-        ======================================================
+       
         CONNECT ERROR
-        ======================================================
+        
         */
 
         newSocket.on(
           "connect_error",
           async (err) => {
 
-            console.log("\n================================");
+           
 
             console.log(
-              "❌ SOCKET CONNECT ERROR"
+              " SOCKET CONNECT ERROR"
             );
 
             console.log(
               err?.message
             );
 
-            console.log(
-              "================================"
-            );
+           
 
             setConnected(false);
 
             /*
-            ============================================
+         
             TOKEN EXPIRED
-            ============================================
+            
             */
 
             if (
@@ -526,7 +505,7 @@ export const SocketProvider = ({
             ) {
 
               console.log(
-                "🔄 TRYING TOKEN REFRESH"
+                " TRYING TOKEN REFRESH"
               );
 
               const newToken =
@@ -548,9 +527,9 @@ export const SocketProvider = ({
         );
 
         /*
-        ======================================================
+       
         RECONNECT ATTEMPT
-        ======================================================
+        
         */
 
         newSocket.io.on(
@@ -558,15 +537,15 @@ export const SocketProvider = ({
           (attempt) => {
 
             console.log(
-              `🟡 RECONNECT ATTEMPT ${attempt}`
+              ` RECONNECT ATTEMPT ${attempt}`
             );
           }
         );
 
         /*
-        ======================================================
+        
         RECONNECTED
-        ======================================================
+        
         */
 
         newSocket.io.on(
@@ -580,9 +559,9 @@ export const SocketProvider = ({
         );
 
         /*
-        ======================================================
+        
         SAVE SOCKET
-        ======================================================
+        
         */
 
         socketRef.current =
@@ -593,7 +572,7 @@ export const SocketProvider = ({
       } catch (err) {
 
         console.log(
-          "❌ CREATE SOCKET ERROR"
+          " CREATE SOCKET ERROR"
         );
 
         console.log(err);
@@ -603,9 +582,9 @@ export const SocketProvider = ({
     };
 
   /*
-  ==========================================================
+  
   CONNECT SOCKET
-  ==========================================================
+ 
   */
 
   const connectSocket =
@@ -640,7 +619,7 @@ export const SocketProvider = ({
         if (socketRef.current?.connected) {
 
           console.log(
-            "⚠️ SOCKET ALREADY CONNECTED"
+            " SOCKET ALREADY CONNECTED"
           );
 
           setLoading(false);
@@ -655,7 +634,7 @@ export const SocketProvider = ({
       } catch (err) {
 
         console.log(
-          "❌ CONNECT SOCKET ERROR"
+          " CONNECT SOCKET ERROR"
         );
 
         console.log(err);
@@ -666,9 +645,9 @@ export const SocketProvider = ({
     }, [disconnectSocket]);
 
   /*
-  ==========================================================
+  
   APP STATE LISTENER
-  ==========================================================
+  
   */
 
   useEffect(() => {
@@ -679,14 +658,14 @@ export const SocketProvider = ({
         async (nextState) => {
 
           console.log(
-            `📱 APP STATE: ${nextState}`
+            `APP STATE: ${nextState}`
           );
 
-          /*
-          ======================================
-          APP ACTIVE
-          ======================================
-          */
+          
+          
+          // APP ACTIVE
+       
+          
 
           if (
             appState.current.match(
@@ -696,7 +675,7 @@ export const SocketProvider = ({
           ) {
 
             console.log(
-              "🟢 APP ACTIVE AGAIN"
+              " APP ACTIVE AGAIN"
             );
 
             if (
@@ -718,11 +697,8 @@ export const SocketProvider = ({
 
   }, [connectSocket]);
 
-  /*
-  ==========================================================
-  INITIAL CONNECT
-  ==========================================================
-  */
+  // INITIAL CONNECT
+
 
   useEffect(() => {
 
@@ -745,9 +721,9 @@ export const SocketProvider = ({
   }, []);
 
   /*
-  ==========================================================
+
   CONTEXT
-  ==========================================================
+ 
   */
 
   return (

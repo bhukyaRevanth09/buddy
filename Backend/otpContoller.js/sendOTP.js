@@ -5,95 +5,242 @@ import userModel from "../models/UserSchema.js";
 import { sendEmail } from "../services/emailServices.js";
 
 export const sendOtp = async (req, res, next) => {
-  console.log('send OTP ::')
+  console.log(" SEND OTP API CALLED");
+
   try {
-    const { email, type, role } = req.body;
+    let { email, type, role } = req.body;
 
-    // 🔹 Validation
-    if (!email) {
+    /*
+   
+    BASIC VALIDATION
+    
+    */
+
+    if (!email || typeof email !== "string") {
       return res.status(400).json({
         success: false,
-        message: "Email required",
+        message: "Email is required"
       });
     }
 
-    if (!role) {
+    email = email.trim().toLowerCase();
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(email)) {
       return res.status(400).json({
         success: false,
-        message: "Role required",
+        message: "Invalid email address"
       });
     }
 
-    // 🔥 Select model
+    if (!role || typeof role !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "Role is required"
+      });
+    }
+
+    role = role.trim().toLowerCase();
+
+    const allowedRoles = ["user", "buddy"];
+
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid role"
+      });
+    }
+
+    if (!type || typeof type !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "OTP type is required"
+      });
+    }
+
+    type = type.trim().toLowerCase();
+
+    const allowedTypes = ["register", "login", "forgot"];
+
+    if (!allowedTypes.includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP type"
+      });
+    }
+
+    /*
+  
+    SELECT MODEL
+    
+    */
+
     const Model = role === "buddy" ? buddyModel : userModel;
 
-    // 🔍 Check user
-    const existingUser = await Model.findOne({ email });
+    const existingUser = await Model.findOne({ email }).select("_id email");
 
-    // REGISTER 
+    /*
+  
+    USER / BUDDY EXISTENCE CHECK
+   
+    */
+
     if (type === "register" && existingUser) {
       return res.status(409).json({
         success: false,
-        message: `${role} already exists`,
+        message:
+          role === "buddy"
+            ? "Buddy already exists with this email"
+            : "User already exists with this email"
       });
     }
 
-    // LOGIN / FORGOT
     if ((type === "login" || type === "forgot") && !existingUser) {
       return res.status(404).json({
         success: false,
-        message: `${role} not found`,
+        message:
+          role === "buddy"
+            ? "Buddy account not found"
+            : "User account not found"
       });
     }
 
-    //  Redis keys
-    const key = `otp:${email}`;
-    const limitKey = `otp_limit:${email}`;
- console.log("keeeeeeeeeeeeeeeeeey::",key)
-    //  Rate limit
-    const limit = await redis.get(limitKey);
-    if (limit) {
+    /*
+   
+    REDIS KEYS
+    
+    */
+
+    const otpKey = `otp:${role}:${type}:${email}`;
+    const countKey = `otp_count:${role}:${type}:${email}`;
+    const blockKey = `otp_block:${role}:${type}:${email}`;
+    const attemptKey = `otp_attempt:${role}:${type}:${email}`;
+
+    /*
+
+    RATE LIMIT
+    3 OTP sends allowed
+    4th request blocked for 5 min
+    
+    */
+
+    const isBlocked = await redis.get(blockKey);
+
+    if (isBlocked) {
       return res.status(429).json({
         success: false,
-        message: "Too many requests. Try after 1 min",
+        message: "Too many OTP requests. Try again after 5 minutes"
       });
     }
 
-    // 🔢 Generate OTP
-    const otp = generateOTP();
+    let count = await redis.get(countKey);
+    count = count ? Number(count) : 0;
 
-    // 🧠 Store OTP (5 min)
-    await redis.set(key, otp, "EX", 300);
+    if (count >= 3) {
+      await redis.set(blockKey, "1", "EX", 300);
+      await redis.del(countKey);
 
-    // 🚫 Set rate limit
-    await redis.set(limitKey, 1, "EX", 60);
-
-    // 📧 Send Email
-    try {
-     await sendEmail({
-  email,
-  otp,
-  subject: "Verify your email - OTP",
-  title: "Verify your email",
-  message: "Use this OTP to continue"
-});
-    } catch (err) {
-      console.log("⚠️ Email failed, fallback to console");
+      return res.status(429).json({
+        success: false,
+        message: "Too many OTP requests. Try again after 5 minutes"
+      });
     }
 
-    // 🔥 Dev log
-    console.log(`📧 OTP for ${email}:`, otp);
+    
+    
+    // GENERATE OTP
+   
+    
+
+    const otp = generateOTP();
+
+    /*
+
+    STORE OTP
+    OTP valid: 5 minutes
+    Request count window: 10 minutes
+    
+    */
+
+    await redis.set(otpKey, otp, "EX", 300);
+
+    const newCount = await redis.incr(countKey);
+
+    if (newCount === 1) {
+      await redis.expire(countKey, 600);
+    }
+
+    await redis.del(attemptKey);
+
+    /*
+
+    EMAIL CONTENT
+    
+    */
+
+    let subject = "Verify your email - OTP";
+    let title = "Verify your email";
+    let message = "Use this OTP to continue";
+
+    if (type === "forgot") {
+      subject = "Reset your password - OTP";
+      title = "Reset your password";
+      message = "Use this OTP to reset your password";
+    }
+
+    if (type === "login") {
+      subject = "Login verification - OTP";
+      title = "Login verification";
+      message = "Use this OTP to login securely";
+    }
+
+    /*
+   
+    SEND EMAIL
+    
+    */
+
+    try {
+      await sendEmail({
+        email,
+        otp,
+        subject,
+        title,
+        message
+      });
+    } catch (err) {
+      console.log("⚠️ EMAIL SEND FAILED:", err.message);
+    }
+
+    /*
+ 
+    DEV LOG ONLY
+
+    */
+
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`📧 OTP for ${role} ${type} ${email}: ${otp}`);
+    }
 
     return res.status(200).json({
       success: true,
       message: "OTP sent successfully",
+      data: {
+        email,
+        role,
+        type,
+        expiresIn: 300,
+        requestCount: newCount,
+        remainingRequests: Math.max(0, 3 - newCount)
+      }
     });
-
   } catch (error) {
-    console.log(error);
-    next({
+    console.log(" SEND OTP ERROR:", error);
+
+    return next({
       statusCode: 500,
-      message: "Send OTP failed",
+      message: "Send OTP failed"
     });
   }
 };

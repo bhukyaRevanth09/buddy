@@ -8,46 +8,57 @@ import {
   Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard
 } from "react-native";
 
 import { Ionicons } from "@expo/vector-icons";
 import api from "../api/Apiclient";
 
 export default function CompleteOtpScreen({ route, navigation }) {
-  const { bookingId } = route.params;
+  const { bookingId } = route.params || {};
 
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
 
   const verifyOtp = async () => {
-    if (!otp.trim()) {
+    const cleanOtp = otp.trim();
+
+    if (!bookingId) {
+      Alert.alert("Error", "Booking ID missing");
+      return;
+    }
+
+    if (!cleanOtp) {
       Alert.alert("OTP required", "Please enter the OTP shared by customer");
+      return;
+    }
+
+    if (cleanOtp.length !== 6) {
+      Alert.alert("Invalid OTP", "OTP must be 6 digits");
       return;
     }
 
     try {
       setLoading(true);
 
-      console.log("🔐 VERIFY COMPLETE OTP:", {
-        bookingId,
-        otp
-      });
-
       const res = await api.post("/booking/complete", {
         bookingId,
-        otp: otp.trim()
+        otp: cleanOtp
       });
 
-      console.log("✅ OTP VERIFY RESPONSE:", res.data);
-
       if (res.data.success) {
-        Alert.alert("Success", "Work completed successfully");
-
-        navigation.reset({
-          index: 0,
-          routes: [{ name: "BuddyHome" }]
-        });
+        Alert.alert("Success", "Work completed successfully", [
+          {
+            text: "OK",
+            onPress: () =>
+              navigation.reset({
+                index: 0,
+                routes: [{ name: "BuddyHome" }]
+              })
+          }
+        ]);
       }
     } catch (err) {
       console.log("❌ OTP VERIFY ERROR:", err?.response?.data || err.message);
@@ -61,66 +72,76 @@ export default function CompleteOtpScreen({ route, navigation }) {
     }
   };
 
+  const handleOtpChange = (value) => {
+    const onlyNumbers = value.replace(/[^0-9]/g, "");
+    setOtp(onlyNumbers);
+  };
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <View style={styles.card}>
-        <View style={styles.iconCircle}>
-          <Ionicons name="shield-checkmark" size={42} color="#000" />
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <View style={styles.card}>
+          <View style={styles.iconCircle}>
+            <Ionicons name="shield-checkmark" size={42} color="#000" />
+          </View>
+
+          <Text style={styles.title}>Complete Work</Text>
+
+          <Text style={styles.sub}>
+            Ask the customer for the completion OTP and enter it below.
+          </Text>
+
+          <View style={styles.bookingBox}>
+            <Ionicons name="receipt-outline" size={16} color="#777" />
+            <Text style={styles.bookingText}>
+              Booking ID: {bookingId || "Missing"}
+            </Text>
+          </View>
+
+          <TextInput
+            style={styles.input}
+            placeholder="000000"
+            placeholderTextColor="#B8B8B8"
+            keyboardType="number-pad"
+            value={otp}
+            onChangeText={handleOtpChange}
+            maxLength={6}
+            textAlign="center"
+            editable={!loading}
+          />
+
+          <TouchableOpacity
+            style={[
+              styles.btn,
+              (otp.length !== 6 || loading) && styles.disabledBtn
+            ]}
+            onPress={verifyOtp}
+            disabled={otp.length !== 6 || loading}
+            activeOpacity={0.85}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                <Text style={styles.btnText}>VERIFY & COMPLETE</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.cancelBtn}
+            disabled={loading}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.cancelText}>Go Back</Text>
+          </TouchableOpacity>
         </View>
-
-        <Text style={styles.title}>Complete Work</Text>
-
-        <Text style={styles.sub}>
-          We sent an OTP to the customer’s email. Ask the customer for the OTP
-          and enter it below.
-        </Text>
-
-        <Text style={styles.bookingText}>
-          Booking ID: {bookingId}
-        </Text>
-
-        <TextInput
-          style={styles.input}
-          placeholder="••••••"
-          placeholderTextColor="#B8B8B8"
-          keyboardType="number-pad"
-          value={otp}
-          onChangeText={setOtp}
-          maxLength={6}
-          textAlign="center"
-        />
-
-        <TouchableOpacity
-          style={[
-            styles.btn,
-            (!otp.trim() || loading) && styles.disabledBtn
-          ]}
-          onPress={verifyOtp}
-          disabled={!otp.trim() || loading}
-          activeOpacity={0.85}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="checkmark-circle" size={20} color="#fff" />
-              <Text style={styles.btnText}>VERIFY & COMPLETE</Text>
-            </>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.cancelBtn}
-          disabled={loading}
-          onPress={() => navigation.goBack()}
-        >
-          <Text style={styles.cancelText}>Go Back</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }
 
@@ -168,10 +189,21 @@ const styles = StyleSheet.create({
     fontSize: 14
   },
 
-  bookingText: {
+  bookingBox: {
     marginTop: 16,
-    color: "#999",
-    fontSize: 12
+    backgroundColor: "#F7F8FA",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6
+  },
+
+  bookingText: {
+    color: "#777",
+    fontSize: 12,
+    fontWeight: "700"
   },
 
   input: {
